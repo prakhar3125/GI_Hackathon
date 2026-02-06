@@ -6,6 +6,7 @@ Response JSON matches the frontend's mockPrefill() schema exactly.
 
 Run:  uvicorn main:app --reload --port 8000
 """
+from order_parser import OrderIntentParser, OrderIntent
 
 import os
 import json
@@ -447,12 +448,14 @@ def build_limit_adjustment(urgency: int, side: Optional[str]) -> dict:
 
 def run_prefill(req: PrefillRequest, market: dict, client: dict) -> dict:
     """
-    Orchestrates all AUO sub-engines, returns the EXACT JSON shape
-    that the frontend expects (mirrors mockPrefill in the .jsx).
+    Orchestrates all AUO sub-engines with intelligent note parsing
     """
     t0 = _time.perf_counter()
 
-    # --- inputs ---
+    # --- PARSE ORDER INTENT (The Brain) ---
+    intent = OrderIntentParser.parse(req.order_notes or "")
+    
+    # --- Basic Inputs ---
     notes = req.order_notes or ""
     size = req.size
     ttc = req.time_to_close if req.time_to_close is not None else int(market["time_to_close"])
@@ -462,6 +465,8 @@ def run_prefill(req: PrefillRequest, market: dict, client: dict) -> dict:
     vol = float(market["volatility_pct"])
     avg_ts = int(market["avg_trade_size"])
     uf = float(client["urgency_factor"])
+    size_ratio = size / max(avg_ts, 1)
+
     instrument = {
         "RELIANCE.NS": "RELIANCE INDS T+1",
         "INFY.NS": "INFOSYS LTD T+1",
@@ -480,45 +485,153 @@ def run_prefill(req: PrefillRequest, market: dict, client: dict) -> dict:
         "WIPRO.NS": "WIPRO LTD T+1",
     }.get(req.symbol, f"{req.symbol} T+1")
 
-    size_ratio = size / max(avg_ts, 1)
+    # --- 1. INTELLIGENT URGENCY CALCULATION ---
+    base_urg = calculate_urgency(notes, size, ttc, avg_ts, uf)
+    score = base_urg["urgency_score"]
+    
+    # Apply intent-based overrides
+    if intent.urgency_level == 'CRITICAL':
+        score = max(score, 85)
+    elif intent.urgency_level == 'HIGH':
+        score = max(score, 65)
+    elif intent.urgency_level == 'LOW':
+        score = min(score, 35)
+    
+    if intent.must_complete:
+        score = min(score + 15, 100)
+    
+    classification = (
+        "CRITICAL" if score >= 80 else
+        "HIGH" if score >= 60 else
+        "MEDIUM" if score >= 40 else
+        "LOW"
+    )
 
-    # --- 1. urgency ---
-    urg = calculate_urgency(notes, size, ttc, avg_ts, uf)
-    score = urg["urgency_score"]
-
-    # --- 2. CAS ---
+    # --- 2. CAS DETECTION (Enhanced) ---
     cas = detect_cas(ttc, ltp)
+    
+    if intent.session_target == 'CAS':
+        cas["cas_active"] = True
+        cas["market_state"] = "CAS_Targeted"
+    elif intent.session_target == 'CLOSING':
+        if ttc > 25:
+            cas["market_state"] = "Pre_Close_Targeted"
 
-    # --- 3. side ---
+    # --- 3. SIDE DETECTION ---
     side_field = detect_side(notes, req.side)
-    side_val = side_field["value"]  # may be None
+    side_val = side_field["value"]
 
-    # --- 4. order type + price type ---
+    # --- 4. INTELLIGENT ALGO SELECTION ---
+    use_algo = False
+    executor = None
+    exec_conf = "MEDIUM"
+    exec_rat = "Standard execution"
+    service = "Market"
+    
+    if cas["cas_active"]:
+        use_algo = False
+        executor = None
+        service = "Market"
+        exec_conf = "HIGH"
+        exec_rat = "CAS window: Direct limit order to closing auction"
+        
+    elif intent.algo_strategy:
+        use_algo = True
+        executor = intent.algo_strategy
+        service = "BlueBox 2"
+        exec_conf = "HIGH"
+        
+        if executor == "VWAP":
+            exec_rat = "Client explicitly requested VWAP benchmark execution"
+        elif executor == "TWAP":
+            exec_rat = "Client explicitly requested TWAP execution"
+        elif executor == "POV":
+            exec_rat = "Client requested POV (Percentage of Volume) execution"
+        elif executor == "ICEBERG":
+            exec_rat = "Client requested minimal market impact (Iceberg display strategy)"
+            
+    elif intent.price_sensitivity == 'MINIMIZE_IMPACT' and size_ratio > 2:
+        use_algo = True
+        executor = "ICEBERG"
+        service = "BlueBox 2"
+        exec_conf = "HIGH"
+        exec_rat = "Large order with minimize impact instruction → Iceberg strategy"
+        
+    elif size_ratio > 10:
+        use_algo = True
+        executor = "VWAP"
+        service = "BlueBox 2"
+        exec_conf = "MEDIUM"
+        exec_rat = f"Very large order (Size Ratio: {size_ratio:.1f}x) → VWAP recommended"
+        
+    elif size_ratio > 3 and score > 70:
+        use_algo = True
+        executor = "POV"
+        service = "BlueBox 2"
+        exec_conf = "HIGH"
+        exec_rat = "Large urgent order requires aggressive participation (POV)"
+
+    # --- 5. ORDER TYPE & PRICE TYPE ---
     ot, pt = select_order_type(score, cas["cas_active"], uf, vol)
 
-    # --- 5. limit price ---
+    # --- 6. INTELLIGENT LIMIT PRICE ---
     lp = calc_limit_price(side_val, score, cas, ltp, bid, ask)
+    
+    # Adjust for execution style
+    if intent.execution_style == 'PASSIVE' and not cas["cas_active"]:
+        if side_val == "Buy":
+            current_limit = lp["value"]
+            passive_limit = round(min(current_limit, bid + 0.05), 1)
+            lp = _field(passive_limit, "HIGH", "Passive execution: Limit near bid for better price")
+        elif side_val == "Sell":
+            current_limit = lp["value"]
+            passive_limit = round(max(current_limit, ask - 0.05), 1)
+            lp = _field(passive_limit, "HIGH", "Passive execution: Limit near ask for better price")
+    
+    elif intent.execution_style == 'AGGRESSIVE':
+        if side_val == "Buy":
+            lp = _field(ask, "HIGH", "Aggressive execution: Limit at ask for immediate fill")
+        elif side_val == "Sell":
+            lp = _field(bid, "HIGH", "Aggressive execution: Limit at bid for immediate fill")
 
-    # --- 6. TIF ---
-    tif = select_tif(score, cas["cas_active"], notes)
+    # --- 7. TIF SELECTION ---
+    if cas["cas_active"]:
+        tif = _field("CAS", "HIGH", "CAS window: Order valid only for closing auction")
+    elif intent.must_complete or score > 90:
+        tif = _field("IOC", "MEDIUM", "Critical urgency: IOC ensures immediate execution attempt")
+    else:
+        tif = _field("GFD", "HIGH", "Standard day order: Valid until market close")
 
-    # --- 7. algo ---
-    algo = select_algo(score, cas["cas_active"], notes, size_ratio)
-    use_algo = algo["use_algo"]
-
-    # --- 8. VWAP params (always calculated; frontend shows if use_algo) ---
+    # --- 8. VWAP PARAMS (Enhanced) ---
     vwap = build_vwap_params(score, notes, ttc, vol)
+    
+    if intent.deadline_time:
+        vwap["get_done"] = _field("True", "HIGH", f"Must complete by {intent.deadline_time}")
+    
+    if intent.must_complete:
+        vwap["get_done"] = _field("True", "HIGH", "Trader explicitly requires completion")
+    
+    if intent.execution_style == 'PASSIVE':
+        vwap["pricing"] = _field("Passive", "HIGH", "Passive pricing per trader instruction")
+        vwap["urgency_setting"] = _field("Low", "HIGH", "Low urgency for passive execution")
+    elif intent.execution_style == 'AGGRESSIVE':
+        vwap["pricing"] = _field("Aggressive", "HIGH", "Aggressive pricing crosses spread when necessary")
+        vwap["urgency_setting"] = _field("High", "HIGH", "High urgency for aggressive execution")
+    
+    if intent.session_target == 'CLOSING' or intent.session_target == 'CAS':
+        vwap["closing_print"] = _field("True", "HIGH", "Trader targeted closing session")
+        vwap["closing_pct"] = _field(30 if score > 80 else 25, "HIGH", "Increased closing participation per instruction")
 
-    # --- 9. crossing ---
+    # --- 9. CROSSING ---
     cross = build_crossing(size, size_ratio)
 
-    # --- 10. IWould ---
+    # --- 10. IWOULD ---
     iw = build_iwould(score, side_val, size, ltp)
 
-    # --- 11. limit adjustment ---
+    # --- 11. LIMIT ADJUSTMENT ---
     la = build_limit_adjustment(score, side_val)
 
-    # --- 12. static fields ---
+    # --- 12. STATIC FIELDS ---
     capacity_val = "Principal" if uf > 0.6 else "Agent"
     capacity_rat = "Standard principal capacity" if uf > 0.6 else "Agency execution model"
     hold_rat = "High urgency - release immediately" if score > 70 else "Standard immediate release"
@@ -526,7 +639,7 @@ def run_prefill(req: PrefillRequest, market: dict, client: dict) -> dict:
 
     elapsed_ms = round((_time.perf_counter() - t0) * 1000)
 
-    # --- build response (EXACT frontend schema) ---
+    # --- BUILD RESPONSE ---
     prefilled_params = {
         # Tier 1
         "instrument": _field(instrument, "HIGH", "Auto-populated from symbol"),
@@ -542,11 +655,10 @@ def run_prefill(req: PrefillRequest, market: dict, client: dict) -> dict:
         "category": _field("Client", "HIGH", "Client order flow"),
         "capacity": _field(capacity_val, "MEDIUM", capacity_rat),
         "account": _field("UNALLOC", "MEDIUM", "Standard unallocated block order"),
-        "service": _field(algo["service"], "HIGH",
-                          "Algo engine" if use_algo else "Direct market execution"),
-        "executor": _field(algo["value"], algo["confidence"], algo["rationale"]),
+        "service": _field(service, "HIGH", "Algo engine" if use_algo else "Direct market execution"),
+        "executor": _field(executor, exec_conf, exec_rat),
         "use_algo": use_algo,
-        # VWAP / algo params (frontend reads these regardless)
+        # VWAP / algo params
         "pricing": vwap["pricing"],
         "layering": vwap["layering"],
         "urgency_setting": vwap["urgency_setting"],
@@ -564,12 +676,13 @@ def run_prefill(req: PrefillRequest, market: dict, client: dict) -> dict:
     }
 
     spread_bps = round(((ask - bid) / ltp) * 10000, 1)
-    confidence_score = round(0.82 + (score / 500), 2)  # deterministic
-
+    base_confidence = 0.82 + (score / 500)
+    adjusted_confidence = (base_confidence + intent.confidence_score) / 2
+    
     return {
         "urgency_score": score,
-        "urgency_classification": urg["urgency_classification"],
-        "urgency_breakdown": urg["urgency_breakdown"],
+        "urgency_classification": classification,
+        "urgency_breakdown": base_urg["urgency_breakdown"],
         "prefilled_params": prefilled_params,
         "market_context": {
             "time_to_close": ttc,
@@ -587,12 +700,19 @@ def run_prefill(req: PrefillRequest, market: dict, client: dict) -> dict:
         "metadata": {
             "auo_version": "1.0.0",
             "processing_time_ms": elapsed_ms,
-            "confidence_score": min(confidence_score, 0.99),
+            "confidence_score": min(round(adjusted_confidence, 2), 0.99),
             "timestamp": datetime.utcnow().isoformat() + "Z",
+            "intent_detected": {
+                "urgency": intent.urgency_level,
+                "algo": intent.algo_strategy,
+                "style": intent.execution_style,
+                "session": intent.session_target,
+                "deadline": intent.deadline_time,
+                "must_complete": intent.must_complete,
+                "parser_confidence": round(intent.confidence_score, 2)
+            }
         },
     }
-
-
 # ============================================================
 # API ROUTES
 # ============================================================

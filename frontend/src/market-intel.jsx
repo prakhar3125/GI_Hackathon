@@ -169,51 +169,49 @@ export default function MarketIntel() {
   const [expandedCatalyst, setExpandedCatalyst] = useState(null);
   const timerRef = useRef(null);
 
-const fetchIntel = useCallback(async () => {
-  setLoading(true);
-  setError(null);
-  
-  // PASTE YOUR PERPLEXITY KEY HERE
-  const PERPLEXITY_API_KEY = "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"; 
-
-  try {
-    const response = await fetch("https://api.perplexity.ai/chat/completions", {
-      method: "POST",
-      headers: {
-        "Authorization": `Bearer ${PERPLEXITY_API_KEY}`,
-        "Content-Type": "application/json"
-      },
-      body: JSON.stringify({
-        model: "sonar-pro", // This model has native live web search
-        messages: [
-          { role: "system", content: SONAR_SYSTEM_PROMPT },
-          { role: "user", content: `Market region: ${MARKET_REGION}. Watchlist: ${WATCHLIST_SYMBOLS.join(", ")}` }
-        ]
-      })
-    });
-
-    if (!response.ok) throw new Error(`API Error: ${response.status}`);
+  const fetchIntel = useCallback(async () => {
+    setLoading(true);
+    setError(null);
     
-    const result = await response.json();
-    const content = result.choices[0].message.content;
-    
-    // Clean JSON if the AI added markdown fences (```json)
-    const cleanJson = content.replace(/```json|```/g, "").trim();
-    const parsed = JSON.parse(cleanJson);
-    
-    setData(parsed);
-    setSource("live");
-    setLastUpdated(new Date());
-  } catch (err) {
-    console.error("Fetch failed:", err);
-    setError("Live Link Failed - Using Internal Cache");
-    setData(MOCK_DATA);
-    setSource("mock");
-  }
-  setLoading(false);
-}, []);
+    // PASTE YOUR PERPLEXITY KEY HERE
+    const PERPLEXITY_API_KEY = "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"; 
 
-  // Initial fetch + auto-refresh every 5 minutes
+    try {
+      const response = await fetch("https://api.perplexity.ai/chat/completions", {
+        method: "POST",
+        headers: {
+          "Authorization": `Bearer ${PERPLEXITY_API_KEY}`,
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify({
+          model: "sonar-pro",
+          messages: [
+            { role: "system", content: SONAR_SYSTEM_PROMPT },
+            { role: "user", content: `Market region: ${MARKET_REGION}. Watchlist: ${WATCHLIST_SYMBOLS.join(", ")}` }
+          ]
+        })
+      });
+
+      if (!response.ok) throw new Error(`API Error: ${response.status}`);
+      
+      const result = await response.json();
+      const content = result.choices[0].message.content;
+      
+      const cleanJson = content.replace(/```json|```/g, "").trim();
+      const parsed = JSON.parse(cleanJson);
+      
+      setData(parsed);
+      setSource("live");
+      setLastUpdated(new Date());
+    } catch (err) {
+      console.error("Fetch failed:", err);
+      setError("Live Link Failed - Using Internal Cache");
+      setData(MOCK_DATA);
+      setSource("mock");
+    }
+    setLoading(false);
+  }, []);
+
   useEffect(() => {
     fetchIntel();
     timerRef.current = setInterval(fetchIntel, 5 * 60 * 1000);
@@ -225,17 +223,17 @@ const fetchIntel = useCallback(async () => {
   const SentIcon = sent?.icon || Activity;
 
   return (
-    <div style={{ width: "100%", height: "100%", background: "#050810", color: "#e0e6f0", fontFamily: "monospace",
+    <div style={{ width: "100vw", height: "100vh", background: "#050810", color: "#e0e6f0", fontFamily: "monospace",
                   display: "flex", flexDirection: "column", overflow: "hidden" }}>
       <style>{`
-        * { box-sizing: border-box; }
+        * { box-sizing: border-box; margin: 0; padding: 0; }
         ::-webkit-scrollbar { width: 6px; height: 6px; }
         ::-webkit-scrollbar-track { background: #0a0e1a; }
         ::-webkit-scrollbar-thumb { background: #1a2332; border-radius: 3px; }
         @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:0.5} }
         .pulse { animation: pulse 1.2s ease-in-out infinite; }
-        .intel-card { background: #0a0e1a; border: 1px solid #1a2332; border-radius: 3px; overflow: hidden; }
-        .intel-header { display: flex; align-items: center; gap: 6px; padding: 5px 8px; background: #0d111a; border-bottom: 1px solid #1a2332; font-size: 9px; font-weight: 600; color: #00d9ff; text-transform: uppercase; letter-spacing: 0.04em; }
+        .intel-card { background: #0a0e1a; border: 1px solid #1a2332; border-radius: 3px; overflow: hidden; display: flex; flex-direction: column; }
+        .intel-header { display: flex; align-items: center; gap: 6px; padding: 5px 8px; background: #0d111a; border-bottom: 1px solid #1a2332; font-size: 9px; font-weight: 600; color: #00d9ff; text-transform: uppercase; letter-spacing: 0.04em; flex-shrink: 0; }
         .outlier-row { display: grid; grid-template-columns: 70px 120px 1fr 55px 50px; align-items: center; padding: 5px 8px; gap: 6px; border-bottom: 1px solid #0d111a; font-size: 9px; cursor: default; transition: background 0.15s; }
         .outlier-row:hover { background: rgba(0,217,255,0.03); }
         .catalyst-row { padding: 6px 8px; border-bottom: 1px solid #0d111a; cursor: pointer; transition: background 0.15s; }
@@ -273,7 +271,7 @@ const fetchIntel = useCallback(async () => {
 
       {error && (
         <div style={{ padding: "4px 12px", background: "rgba(255,170,0,0.08)", borderBottom: "1px solid #1a2332",
-                      fontSize: "9px", color: "#ffaa00", display: "flex", alignItems: "center", gap: "6px" }}>
+                      fontSize: "9px", color: "#ffaa00", display: "flex", alignItems: "center", gap: "6px", flexShrink: 0 }}>
           <AlertTriangle size={10} /> {error}
         </div>
       )}
@@ -292,12 +290,7 @@ const fetchIntel = useCallback(async () => {
         <div style={{ flex: 1, overflow: "auto", padding: "8px", display: "flex", flexDirection: "column", gap: "8px" }}>
 
           {/* ═══ ROW 1: MACRO NARRATIVE + BENCHMARKS ═══ */}
-          <div style={{
-  display: "grid",
-  gridTemplateColumns: "1fr 320px",
-  gap: "1px",
-  background: "#1a2332"
-}}>
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 320px", gap: "8px", minHeight: "180px" }}>
 
             {/* Macro Narrative Card */}
             <div className="intel-card">
@@ -311,12 +304,14 @@ const fetchIntel = useCallback(async () => {
                   </span>
                 )}
               </div>
-              <div style={{ padding: "10px 12px" }}>
-                <div style={{ fontSize: "14px", fontWeight: 700, color: "#e0e6f0", marginBottom: "6px", lineHeight: 1.3 }}>
-                  {d.macro_narrative?.headline}
-                </div>
-                <div style={{ fontSize: "10px", color: "#b0b8c8", lineHeight: 1.5, marginBottom: "8px" }}>
-                  {d.macro_narrative?.summary}
+              <div style={{ padding: "10px 12px", flex: 1, display: "flex", flexDirection: "column", gap: "8px" }}>
+                <div>
+                  <div style={{ fontSize: "14px", fontWeight: 700, color: "#e0e6f0", marginBottom: "6px", lineHeight: 1.3 }}>
+                    {d.macro_narrative?.headline}
+                  </div>
+                  <div style={{ fontSize: "10px", color: "#b0b8c8", lineHeight: 1.5 }}>
+                    {d.macro_narrative?.summary}
+                  </div>
                 </div>
                 {d.macro_narrative?.key_driver && (
                   <div style={{ padding: "6px 8px", background: "#0d111a", borderRadius: "3px", border: "1px solid #1a2332" }}>
@@ -336,7 +331,7 @@ const fetchIntel = useCallback(async () => {
               <div className="intel-header">
                 <BarChart3 size={10} /> BENCHMARKS
               </div>
-              <div style={{ padding: "6px" }}>
+              <div style={{ padding: "6px", flex: 1 }}>
                 {d.benchmark_status?.map((b, i) => {
                   const pct = parseFloat(b.change_pct);
                   const isUp = pct >= 0;
@@ -366,26 +361,27 @@ const fetchIntel = useCallback(async () => {
 
           {/* ═══ ROW 2: SECTOR HEATMAP ═══ */}
           {d.sector_heatmap && d.sector_heatmap.length > 0 && (
-            <div className="intel-card">
+            <div className="intel-card" style={{ minHeight: "100px" }}>
               <div className="intel-header">
                 <Flame size={10} /> SECTOR HEATMAP
               </div>
-              <div style={{ display: "flex", gap: "1px", padding: "6px" }}>
+              <div style={{ display: "flex", gap: "6px", padding: "8px", flex: 1 }}>
                 {d.sector_heatmap.map((s, i) => {
                   const pct = parseFloat(s.change_pct);
                   return (
                     <div key={i} style={{
-                      flex: 1, padding: "8px 6px", background: pctBg(s.change_pct),
+                      flex: 1, padding: "10px 8px", background: pctBg(s.change_pct),
                       borderRadius: "3px", textAlign: "center", cursor: "default",
-                      border: "1px solid #1a2332"
+                      border: "1px solid #1a2332", display: "flex", flexDirection: "column",
+                      justifyContent: "center", minWidth: "100px"
                     }} title={s.driver}>
-                      <div style={{ fontSize: "9px", fontWeight: 700, color: "#e0e6f0", marginBottom: "3px" }}>
+                      <div style={{ fontSize: "9px", fontWeight: 700, color: "#e0e6f0", marginBottom: "4px" }}>
                         {s.sector}
                       </div>
-                      <div style={{ fontSize: "13px", fontWeight: 700, color: pctColor(s.change_pct) }}>
+                      <div style={{ fontSize: "15px", fontWeight: 700, color: pctColor(s.change_pct), marginBottom: "4px" }}>
                         {pct >= 0 ? "+" : ""}{pct.toFixed(1)}%
                       </div>
-                      <div style={{ fontSize: "7px", color: "#7a8599", marginTop: "2px", overflow: "hidden",
+                      <div style={{ fontSize: "7px", color: "#7a8599", overflow: "hidden",
                                     textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
                         {s.driver}
                       </div>
@@ -397,16 +393,10 @@ const fetchIntel = useCallback(async () => {
           )}
 
           {/* ═══ ROW 3: OUTLIERS + CATALYSTS + PREDICTIONS ═══ */}
-          <div style={{
-  display: "grid",
-  gridTemplateColumns: "1fr 300px 280px",
-  gap: "1px",
-  background: "#1a2332"
-}}>
-
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 320px 280px", gap: "8px", flex: 1, minHeight: "400px" }}>
 
             {/* Outlier Scanner */}
-            <div className="intel-card" style={{ display: "flex", flexDirection: "column" }}>
+            <div className="intel-card">
               <div className="intel-header">
                 <AlertTriangle size={10} /> OUTLIER SCANNER
                 <span style={{ marginLeft: "auto", fontSize: "8px", color: "#7a8599", fontWeight: 400 }}>
@@ -416,7 +406,8 @@ const fetchIntel = useCallback(async () => {
               <div style={{ flex: 1, overflowY: "auto" }}>
                 {/* Column headers */}
                 <div style={{ display: "grid", gridTemplateColumns: "70px 120px 1fr 55px 50px", padding: "4px 8px",
-                              gap: "6px", fontSize: "7px", color: "#555", textTransform: "uppercase", borderBottom: "1px solid #1a2332" }}>
+                              gap: "6px", fontSize: "7px", color: "#555", textTransform: "uppercase", 
+                              borderBottom: "1px solid #1a2332", position: "sticky", top: 0, background: "#0a0e1a", zIndex: 1 }}>
                   <span>Symbol</span><span>Name</span><span>Catalyst</span><span>Price</span><span>Chg%</span>
                 </div>
                 {d.outliers?.sort((a, b) => Math.abs(parseFloat(b.change_pct)) - Math.abs(parseFloat(a.change_pct)))
@@ -462,7 +453,7 @@ const fetchIntel = useCallback(async () => {
             </div>
 
             {/* Catalysts Feed */}
-            <div className="intel-card" style={{ display: "flex", flexDirection: "column" }}>
+            <div className="intel-card">
               <div className="intel-header">
                 <Newspaper size={10} /> CATALYSTS
               </div>
@@ -476,10 +467,10 @@ const fetchIntel = useCallback(async () => {
                       <div style={{ display: "flex", alignItems: "center", gap: "6px", marginBottom: "3px" }}>
                         <span style={{ fontSize: "8px", color: "#555", minWidth: "40px" }}>{c.time}</span>
                         <ImpIcon size={10} style={{ color: imp.color, flexShrink: 0 }} />
-                        <span style={{ fontSize: "9px", fontWeight: 600, color: "#e0e6f0", lineHeight: 1.3 }}>
+                        <span style={{ fontSize: "9px", fontWeight: 600, color: "#e0e6f0", lineHeight: 1.3, flex: 1 }}>
                           {c.headline}
                         </span>
-                        <span style={{ marginLeft: "auto", padding: "1px 5px", background: `${imp.color}18`,
+                        <span style={{ padding: "1px 5px", background: `${imp.color}18`,
                                        color: imp.color, borderRadius: "2px", fontSize: "7px", fontWeight: 700, flexShrink: 0 }}>
                           {c.impact?.toUpperCase()}
                         </span>
@@ -496,23 +487,22 @@ const fetchIntel = useCallback(async () => {
             </div>
 
             {/* Predictions / Implied Sentiment */}
-            <div className="intel-card" style={{ display: "flex", flexDirection: "column" }}>
+            <div className="intel-card">
               <div className="intel-header">
                 <Target size={10} /> IMPLIED SENTIMENT
               </div>
-              <div style={{ flex: 1, overflowY: "auto", padding: "6px" }}>
+              <div style={{ flex: 1, overflowY: "auto", padding: "8px" }}>
                 {d.predictions?.map((p, i) => {
                   const prob = parseInt(p.probability) || 50;
-                  const isHigh = prob >= 60;
                   const dirColor = p.direction === "Bullish" ? "#00d966" : p.direction === "Bearish" ? "#ff4444" : "#ffaa00";
                   return (
                     <div key={i} style={{ marginBottom: "10px", padding: "8px", background: "#0d111a",
                                           borderRadius: "3px", border: "1px solid #1a2332" }}>
-                      <div style={{ fontSize: "9px", color: "#e0e6f0", fontWeight: 600, marginBottom: "6px", lineHeight: 1.3 }}>
+                      <div style={{ fontSize: "9px", color: "#e0e6f0", fontWeight: 600, marginBottom: "8px", lineHeight: 1.3 }}>
                         {p.event}
                       </div>
                       {/* Probability bar */}
-                      <div style={{ display: "flex", alignItems: "center", gap: "8px", marginBottom: "4px" }}>
+                      <div style={{ display: "flex", alignItems: "center", gap: "8px", marginBottom: "6px" }}>
                         <div style={{ flex: 1, height: "6px", background: "#1a2332", borderRadius: "3px", overflow: "hidden" }}>
                           <div style={{ height: "100%", width: `${prob}%`, background: dirColor,
                                         borderRadius: "3px", transition: "width 0.5s ease" }} />
@@ -522,7 +512,7 @@ const fetchIntel = useCallback(async () => {
                         </span>
                       </div>
                       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                        <span style={{ padding: "1px 5px", background: `${dirColor}18`, color: dirColor,
+                        <span style={{ padding: "2px 6px", background: `${dirColor}18`, color: dirColor,
                                        borderRadius: "2px", fontSize: "7px", fontWeight: 700 }}>
                           {p.direction?.toUpperCase()}
                         </span>
@@ -538,10 +528,10 @@ const fetchIntel = useCallback(async () => {
       )}
 
       {/* ─── FOOTER ─── */}
-      <div style={{ padding: "3px 12px", background: "#0a0e1a", borderTop: "1px solid #1a2332",
+      <div style={{ padding: "4px 12px", background: "#0a0e1a", borderTop: "1px solid #1a2332",
                     display: "flex", justifyContent: "space-between", fontSize: "7px", color: "#3a4255",
                     flexShrink: 0 }}>
-        <span>Data: {source === "live" ? "Anthropic API + Web Search" : "Cached snapshot"} · Region: {MARKET_REGION}</span>
+        <span>Data: {source === "live" ? "Perplexity Sonar Pro + Web Search" : "Cached snapshot"} · Region: {MARKET_REGION}</span>
         <span>Auto-refresh: 5min · {WATCHLIST_SYMBOLS.length} symbols tracked</span>
       </div>
     </div>

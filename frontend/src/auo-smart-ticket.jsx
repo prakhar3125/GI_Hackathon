@@ -4,7 +4,7 @@ import {
   Check, Pencil, AlertTriangle, Info, Send, RotateCcw, 
   Activity, Target, Layers, BarChart3, Eye, EyeOff,
   ArrowUpRight, ArrowDownRight, Gauge, CircleDot, Box,
-  Timer, Crosshair, SlidersHorizontal, Cpu, RefreshCw
+  Timer, Crosshair, SlidersHorizontal, Cpu, RefreshCw, Lock, Unlock
 } from "lucide-react";
 
 // ─── API CONFIG ─────────────────────────────────────────────────
@@ -336,17 +336,25 @@ function mockPrefill(input) {
 
 const DRIVER_FIELDS = new Set(["Side"]);
 
-// ─── COMPACT FIELD ──────────────────────────────────────────────
-function CompactField({ label, value, options, hasRun, confidence, rationale, icon, type, disabled: forceDisabled, onDriverChange, recalcGeneration }) {
+// ─── COMPACT FIELD WITH LOCK ────────────────────────────────────
+function CompactField({ 
+  label, value, options, hasRun, confidence, rationale, icon, type, 
+  disabled: forceDisabled, onDriverChange, recalcGeneration,
+  isLocked, onLockToggle 
+}) {
   const [isEdited, setIsEdited] = useState(false);
   const [currentValue, setCurrentValue] = useState(value);
   const [showTip, setShowTip] = useState(false);
   const [flash, setFlash] = useState(false);
+  const [lockFlash, setLockFlash] = useState(false);
   const tipRef = useRef(null);
   const prevValueRef = useRef(value);
+  const lastClickRef = useRef(0);
   const isDriver = DRIVER_FIELDS.has(label);
 
+  // Handle incoming value changes (from recalc) - but respect lock
   useEffect(() => {
+    if (isLocked) return; // LOCKED fields ignore updates
     if (isDriver && isEdited) return;
     const changed = prevValueRef.current !== value;
     setCurrentValue(value);
@@ -357,7 +365,7 @@ function CompactField({ label, value, options, hasRun, confidence, rationale, ic
       const t = setTimeout(() => setFlash(false), 800);
       return () => clearTimeout(t);
     }
-  }, [value, recalcGeneration]);
+  }, [value, recalcGeneration, isLocked]);
 
   useEffect(() => {
     if (!showTip) return;
@@ -367,10 +375,19 @@ function CompactField({ label, value, options, hasRun, confidence, rationale, ic
   }, [showTip]);
 
   const handleChange = (e) => {
+    if (isLocked) return; // Can't edit locked fields
     const newVal = e.target.value;
     setIsEdited(true);
     setCurrentValue(newVal);
     if (isDriver && onDriverChange) onDriverChange(label, newVal);
+  };
+
+  // Double-click to lock/unlock
+  const handleDoubleClick = () => {
+    if (!hasRun) return; // Can't lock before prefill runs
+    onLockToggle(label);
+    setLockFlash(true);
+    setTimeout(() => setLockFlash(false), 500);
   };
 
   const confColor = confidence === "HIGH" ? "#00d9ff" : confidence === "MEDIUM" ? "#ffaa00" : "#ff4444";
@@ -380,67 +397,116 @@ function CompactField({ label, value, options, hasRun, confidence, rationale, ic
   const IconComp = icon;
 
   return (
-    <div style={{
-      display: "grid", gridTemplateColumns: "100px 1fr 16px 16px", alignItems: "center", gap: "6px",
-      padding: "3px 6px", borderRadius: "2px", transition: "all 0.3s",
-      background: flash ? "rgba(0,217,255,0.08)" : isEdited ? "rgba(255,170,0,0.05)" : "transparent",
-      borderLeft: isDriver && isEdited ? "2px solid #00d9ff" : isEdited ? "2px solid #ffaa00" : flash ? "2px solid #00d9ff" : "2px solid transparent",
-      minHeight: "24px", fontSize: "10px", opacity: hasRun ? 1 : 0.4
-    }}>
-      <div style={{ display: "flex", alignItems: "center", gap: "4px", color: "#7a8599", fontFamily: "monospace", fontSize: "9px" }}>
-        {IconComp && <IconComp size={10} />}
+    <div 
+      onDoubleClick={handleDoubleClick}
+      style={{
+        display: "grid", 
+        gridTemplateColumns: "100px 1fr 16px 16px 16px", 
+        alignItems: "center", 
+        gap: "6px",
+        padding: "3px 6px", 
+        borderRadius: "2px", 
+        transition: "all 0.3s",
+        background: lockFlash 
+          ? "rgba(255,170,0,0.2)" 
+          : isLocked 
+            ? "rgba(255,170,0,0.08)" 
+            : flash 
+              ? "rgba(0,217,255,0.08)" 
+              : isEdited 
+                ? "rgba(255,170,0,0.05)" 
+                : "transparent",
+        borderLeft: isLocked 
+          ? "2px solid #ffaa00" 
+          : isDriver && isEdited 
+            ? "2px solid #00d9ff" 
+            : isEdited 
+              ? "2px solid #ffaa00" 
+              : flash 
+                ? "2px solid #00d9ff" 
+                : "2px solid transparent",
+        minHeight: "24px", 
+        fontSize: "11px", 
+        opacity: hasRun ? 1 : 0.4,
+        cursor: hasRun ? "pointer" : "default"
+      }}
+    >
+      <div style={{ display: "flex", alignItems: "center", gap: "4px", color: "#7a8599", fontFamily: "monospace", fontSize: "10px" }}>
+        {IconComp && <IconComp size={11} />}
         <span>{label}</span>
       </div>
       
       {options ? (
-        <select value={hasRun ? (currentValue || "") : ""} disabled={isDisabled} onChange={handleChange}
-          style={{ background: "#0a0e1a", border: "1px solid #1a2332", borderRadius: "2px", padding: "2px 4px",
-                   color: "#e0e6f0", fontSize: "10px", fontFamily: "monospace", cursor: isDisabled ? "default" : "pointer" }}>
+        <select 
+          value={hasRun ? (currentValue || "") : ""} 
+          disabled={isDisabled || isLocked} 
+          onChange={handleChange}
+          style={{ 
+            background: isLocked ? "#1a2332" : "#0a0e1a", 
+            border: "1px solid #1a2332", 
+            borderRadius: "2px", 
+            padding: "2px 4px",
+            color: isLocked ? "#ffaa00" : "#e0e6f0", 
+            fontSize: "11px", 
+            fontFamily: "monospace", 
+            cursor: isLocked ? "not-allowed" : isDisabled ? "default" : "pointer" 
+          }}
+        >
           <option value="" disabled>--</option>
           {options.map(opt => <option key={opt} value={opt}>{opt}</option>)}
         </select>
       ) : (
         <input 
-  type={inputType} 
-  value={
-    hasRun 
-      ? (inputType === "date" && !currentValue ? "" : (currentValue ?? "--")) 
-      : ""
-  } 
-  disabled={isDisabled} 
-  onChange={handleChange}
-  onClick={(e) => hasRun && e.target.select()}
-  style={{ 
-    background: "#0a0e1a", 
-    border: "1px solid #1a2332", 
-    borderRadius: "2px", 
-    padding: "2px 4px",
-    color: "#e0e6f0", 
-    fontSize: "10px", 
-    fontFamily: "monospace", 
-    minWidth: 0 
-  }} 
-/>
+          type={inputType} 
+          value={
+            hasRun 
+              ? (inputType === "date" && !currentValue ? "" : (currentValue ?? "--")) 
+              : ""
+          } 
+          disabled={isDisabled || isLocked} 
+          onChange={handleChange}
+          onClick={(e) => hasRun && !isLocked && e.target.select()}
+          style={{ 
+            background: isLocked ? "#1a2332" : "#0a0e1a", 
+            border: "1px solid #1a2332", 
+            borderRadius: "2px", 
+            padding: "2px 4px",
+            color: isLocked ? "#ffaa00" : "#e0e6f0", 
+            fontSize: "11px", 
+            fontFamily: "monospace", 
+            minWidth: 0,
+            cursor: isLocked ? "not-allowed" : "default"
+          }} 
+        />
       )}
       
+      {/* Lock Icon */}
       <div style={{ width: "16px", textAlign: "center" }}>
-        {hasRun && (isEdited ? (isDriver ? <RefreshCw size={10} color="#00d9ff" /> : <Pencil size={10} color="#ffaa00" />) : <Check size={10} color={confColor} />)}
+        {hasRun && isLocked && <Lock size={11} color="#ffaa00" />}
+        {hasRun && !isLocked && !isEdited && !isDriver && <Unlock size={11} color="#7a8599" opacity={0.3} />}
+      </div>
+
+      {/* Status Icon */}
+      <div style={{ width: "16px", textAlign: "center" }}>
+        {hasRun && !isLocked && (isEdited ? (isDriver ? <RefreshCw size={11} color="#00d9ff" /> : <Pencil size={11} color="#ffaa00" />) : <Check size={11} color={confColor} />)}
       </div>
       
+      {/* Info Icon */}
       {hasRun && rationale && (
         <div ref={tipRef} style={{ position: "relative" }}>
           <button onClick={() => setShowTip(!showTip)}
             style={{ background: "none", border: "none", cursor: "pointer", padding: 0, color: "#7a8599", display: "flex" }}>
-            <Info size={10} />
+            <Info size={11} />
           </button>
           {showTip && (
             <div style={{ position: "absolute", right: 0, top: "100%", marginTop: "4px", background: "#12161f",
-                          border: "1px solid #1a2332", borderRadius: "4px", padding: "6px 8px", fontSize: "9px",
+                          border: "1px solid #1a2332", borderRadius: "4px", padding: "6px 8px", fontSize: "10px",
                           color: "#b0b8c8", width: "220px", zIndex: 100, boxShadow: "0 4px 12px rgba(0,0,0,0.6)", lineHeight: 1.4 }}>
-              <div style={{ fontSize: "8px", textTransform: "uppercase", letterSpacing: "0.05em", color: confColor, marginBottom: "3px", fontWeight: 600 }}>
+              <div style={{ fontSize: "9px", textTransform: "uppercase", letterSpacing: "0.05em", color: confColor, marginBottom: "3px", fontWeight: 600 }}>
                 {confidence} CONFIDENCE
               </div>
-              {isDriver && <div style={{ fontSize: "8px", color: "#00d9ff", marginBottom: "3px", fontWeight: 600 }}>⚡ DRIVER FIELD</div>}
+              {isLocked && <div style={{ fontSize: "9px", color: "#ffaa00", marginBottom: "3px", fontWeight: 600 }}>🔒 LOCKED PARAMETER</div>}
+              {isDriver && <div style={{ fontSize: "9px", color: "#00d9ff", marginBottom: "3px", fontWeight: 600 }}>⚡ DRIVER FIELD</div>}
               {rationale}
             </div>
           )}
@@ -455,12 +521,12 @@ function PanelHeader({ title, icon, tag }) {
   const IconComp = icon;
   return (
     <div style={{ display: "flex", alignItems: "center", gap: "6px", padding: "4px 6px", background: "#0d111a",
-                  borderBottom: "1px solid #1a2332", fontSize: "9px", fontWeight: 600, color: "#00d9ff",
+                  borderBottom: "1px solid #1a2332", fontSize: "10px", fontWeight: 600, color: "#00d9ff",
                   textTransform: "uppercase", letterSpacing: "0.05em" }}>
-      <IconComp size={11} />
+      <IconComp size={12} />
       <span>{title}</span>
       {tag && <span style={{ marginLeft: "auto", padding: "1px 5px", background: tag === "CAS" ? "rgba(255,68,68,0.2)" : "rgba(0,217,255,0.2)",
-                              color: tag === "CAS" ? "#ff4444" : "#00d9ff", borderRadius: "2px", fontSize: "8px" }}>{tag}</span>}
+                              color: tag === "CAS" ? "#ff4444" : "#00d9ff", borderRadius: "2px", fontSize: "9px" }}>{tag}</span>}
     </div>
   );
 }
@@ -470,13 +536,13 @@ function UrgencyStrip({ score, classification, breakdown }) {
   const color = classification === "CRITICAL" ? "#ff4444" : classification === "HIGH" ? "#ff8800" : classification === "MEDIUM" ? "#ffaa00" : "#00d966";
   return (
     <div style={{ display: "flex", alignItems: "center", gap: "8px", padding: "4px 8px", background: "#0d111a",
-                  border: "1px solid #1a2332", borderRadius: "3px", fontSize: "10px" }}>
-      <Gauge size={12} style={{ color }} />
-      <span style={{ color: "#7a8599", fontFamily: "monospace", fontSize: "9px" }}>URGENCY</span>
-      <span style={{ fontSize: "16px", fontWeight: 700, color, fontFamily: "monospace" }}>{score}</span>
-      <span style={{ fontSize: "8px", color: "#7a8599" }}>/100</span>
-      <span style={{ padding: "2px 6px", background: `${color}22`, color, borderRadius: "2px", fontSize: "8px", fontWeight: 700 }}>{classification}</span>
-      <div style={{ marginLeft: "auto", display: "flex", gap: "8px", fontSize: "9px", fontFamily: "monospace", color: "#7a8599" }}>
+                  border: "1px solid #1a2332", borderRadius: "3px", fontSize: "11px" }}>
+      <Gauge size={13} style={{ color }} />
+      <span style={{ color: "#7a8599", fontFamily: "monospace", fontSize: "10px" }}>URGENCY</span>
+      <span style={{ fontSize: "17px", fontWeight: 700, color, fontFamily: "monospace" }}>{score}</span>
+      <span style={{ fontSize: "9px", color: "#7a8599" }}>/100</span>
+      <span style={{ padding: "2px 6px", background: `${color}22`, color, borderRadius: "2px", fontSize: "9px", fontWeight: 700 }}>{classification}</span>
+      <div style={{ marginLeft: "auto", display: "flex", gap: "8px", fontSize: "10px", fontFamily: "monospace", color: "#7a8599" }}>
         <span>T:{breakdown.time_pressure.toFixed(1)}</span>
         <span>S:{breakdown.size_pressure.toFixed(1)}</span>
         <span>C:{breakdown.client_factor.toFixed(1)}</span>
@@ -493,12 +559,12 @@ function MarketStrip({ ctx }) {
   const col = stateColors[ctx.market_state] || "#888";
   return (
     <div style={{ display: "flex", alignItems: "center", gap: "10px", padding: "4px 8px", background: "#0d111a",
-                  border: "1px solid #1a2332", borderRadius: "3px", fontSize: "9px", fontFamily: "monospace" }}>
+                  border: "1px solid #1a2332", borderRadius: "3px", fontSize: "10px", fontFamily: "monospace" }}>
       <div style={{ display: "flex", alignItems: "center", gap: "4px" }}>
-        <CircleDot size={8} style={{ color: col }} />
+        <CircleDot size={9} style={{ color: col }} />
         <span style={{ color: col, fontWeight: 700 }}>{ctx.market_state}</span>
       </div>
-      {ctx.cas_active && <span style={{ padding: "1px 5px", background: "rgba(255,68,68,0.2)", color: "#ff4444", borderRadius: "2px", fontSize: "8px", fontWeight: 700 }}>
+      {ctx.cas_active && <span style={{ padding: "1px 5px", background: "rgba(255,68,68,0.2)", color: "#ff4444", borderRadius: "2px", fontSize: "9px", fontWeight: 700 }}>
         CAS {ctx.time_to_close}m
       </span>}
       <span style={{ color: "#7a8599" }}>LTP ₹{ctx.ltp}</span>
@@ -506,7 +572,7 @@ function MarketStrip({ ctx }) {
       <span style={{ color: "#7a8599" }}>ASK ₹{ctx.ask}</span>
       <span style={{ color: "#7a8599" }}>SPR {ctx.spread_bps}bp</span>
       <span style={{ color: "#7a8599" }}>VOL {ctx.volatility}%</span>
-      {ctx.cas_active && <span style={{ color: "#ff8800", fontSize: "8px", marginLeft: "auto" }}>
+      {ctx.cas_active && <span style={{ color: "#ff8800", fontSize: "9px", marginLeft: "auto" }}>
         BAND: ₹{ctx.cas_lower_band} - ₹{ctx.cas_upper_band}
       </span>}
     </div>
@@ -528,6 +594,9 @@ export default function AUOTerminal() {
   const [driverOverrides, setDriverOverrides] = useState({});
   const [recalcGen, setRecalcGen] = useState(0);
   const [recalcCount, setRecalcCount] = useState(0);
+  
+  // NEW: Lock state - tracks which fields are locked
+  const [lockedFields, setLockedFields] = useState(new Set());
 
   const filteredSymbols = MOCK_SYMBOLS.filter(s => s.toLowerCase().includes(symbolSearch.toLowerCase()));
   const debounceRef = useRef(null);
@@ -535,6 +604,18 @@ export default function AUOTerminal() {
 
   const handleDriverChange = useCallback((fieldLabel, newValue) => {
     setDriverOverrides(prev => ({ ...prev, [fieldLabel]: newValue }));
+  }, []);
+
+  const handleLockToggle = useCallback((fieldLabel) => {
+    setLockedFields(prev => {
+      const newSet = new Set(prev);
+      if (newSet.has(fieldLabel)) {
+        newSet.delete(fieldLabel);
+      } else {
+        newSet.add(fieldLabel);
+      }
+      return newSet;
+    });
   }, []);
 
   const overridesKey = JSON.stringify(driverOverrides);
@@ -570,12 +651,13 @@ export default function AUOTerminal() {
 
   const resetAll = () => {
     setResult(null); setHasRun(false); setSymbol(""); setCpty(""); setQty(""); setNotes(""); setTtc(25);
-    setDriverOverrides({}); setRecalcCount(0);
+    setDriverOverrides({}); setRecalcCount(0); setLockedFields(new Set());
   };
 
   const p = result?.prefilled_params || {};
   const ctx = result?.market_context;
   const getValue = (v) => v?.value ?? "--";
+  
   const handleSubmit = async () => {
     if (!result) return;
     
@@ -583,15 +665,14 @@ export default function AUOTerminal() {
       const payload = {
         symbol: symbol,
         cpty_id: cpty,
-        // Prioritize driver override, fallback to AI suggestion, fallback to null
         side: driverOverrides["Side"] || result.prefilled_params.side?.value || null,
         size: +qty,
         order_notes: notes,
         prefilled_params: result.prefilled_params,
-        trader_overrides: driverOverrides
+        trader_overrides: driverOverrides,
+        locked_fields: Array.from(lockedFields)
       };
 
-      // Check if we are in API mode
       if (API_BASE) {
         const resp = await fetch(`${API_BASE}/api/orders/submit`, {
           method: "POST",
@@ -603,12 +684,11 @@ export default function AUOTerminal() {
 
         const data = await resp.json();
         if (data.status === "submitted") {
-          alert(`✅ Order Placed Successfully!\nOrder ID: ${data.order_id}\nTime: ${data.submission_time}`);
+          alert(`✅ Order Placed Successfully!\nOrder ID: ${data.order_id}\nTime: ${data.submission_time}\nLocked Fields: ${lockedFields.size}`);
           resetAll();
         }
       } else {
-        // Mock Fallback
-        alert("Mock Submit: Order validated (No API connection)");
+        alert(`Mock Submit: Order validated\nLocked Fields: ${lockedFields.size}`);
         resetAll();
       }
     } catch (e) {
@@ -635,14 +715,20 @@ export default function AUOTerminal() {
       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "6px 12px",
                     background: "#0a0e1a", borderBottom: "1px solid #1a2332" }}>
         <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
-          <Zap size={14} style={{ color: "#00d9ff" }} />
-          <span style={{ fontSize: "11px", fontWeight: 700, letterSpacing: "0.05em" }}>AUO TERMINAL</span>
-          <span style={{ fontSize: "8px", color: "#7a8599", marginLeft: "4px" }}>ADAPTIVE URGENCY ORCHESTRATOR</span>
+          <Zap size={15} style={{ color: "#00d9ff" }} />
+          <span style={{ fontSize: "12px", fontWeight: 700, letterSpacing: "0.05em" }}>AUO TERMINAL</span>
+          <span style={{ fontSize: "9px", color: "#7a8599", marginLeft: "4px" }}>ADAPTIVE URGENCY ORCHESTRATOR</span>
+          <span style={{ fontSize: "8px", color: "#ffaa00", marginLeft: "8px", padding: "2px 4px", background: "rgba(255,170,0,0.1)", borderRadius: "2px" }}>
+            * DOUBLE-CLICK TO LOCK PARAMETER
+          </span>
         </div>
-        <div style={{ display: "flex", alignItems: "center", gap: "10px", fontSize: "8px", color: "#7a8599" }}>
+        <div style={{ display: "flex", alignItems: "center", gap: "10px", fontSize: "9px", color: "#7a8599" }}>
           {result && <span>v{result.metadata.auo_version} · {result.metadata.processing_time_ms}ms · {result.metadata.confidence_score}</span>}
           {recalcCount > 1 && <span style={{ padding: "2px 6px", background: "rgba(0,217,255,0.1)", borderRadius: "2px", color: "#00d9ff" }}>
             {recalcCount} RECALC
+          </span>}
+          {lockedFields.size > 0 && <span style={{ padding: "2px 6px", background: "rgba(255,170,0,0.1)", borderRadius: "2px", color: "#ffaa00", display: "flex", alignItems: "center", gap: "3px" }}>
+            <Lock size={9} /> {lockedFields.size} LOCKED
           </span>}
           <span style={{ padding: "2px 6px", background: "#0d111a", borderRadius: "2px" }}>{API_BASE ? "⚡ API" : "🧪 MOCK"}</span>
         </div>
@@ -654,25 +740,25 @@ export default function AUOTerminal() {
         
         {/* LEFT COLUMN: Input (20%) */}
         <div style={{ gridColumn: "1", gridRow: "1 / 3", background: "#0a0e1a", padding: "8px", display: "flex", flexDirection: "column", gap: "6px", overflowY: "auto" }}>
-          <div style={{ fontSize: "8px", textTransform: "uppercase", letterSpacing: "0.05em", color: "#7a8599", fontWeight: 600, marginBottom: "2px" }}>
+          <div style={{ fontSize: "9px", textTransform: "uppercase", letterSpacing: "0.05em", color: "#7a8599", fontWeight: 600, marginBottom: "2px" }}>
             ORDER INPUT
           </div>
 
           {/* Symbol */}
           <div style={{ position: "relative" }}>
-            <label style={{ fontSize: "8px", color: "#7a8599", marginBottom: "2px", display: "block" }}>SYMBOL</label>
+            <label style={{ fontSize: "9px", color: "#7a8599", marginBottom: "2px", display: "block" }}>SYMBOL</label>
             <input type="text" placeholder="Search..." value={symbol || symbolSearch}
               onChange={(e) => { setSymbolSearch(e.target.value); setSymbol(""); setShowSymbols(true); }}
               onFocus={() => setShowSymbols(true)}
               style={{ width: "100%", padding: "4px 6px", background: "#050810", border: "1px solid #1a2332",
-                       borderRadius: "2px", color: "#e0e6f0", fontSize: "10px" }} />
+                       borderRadius: "2px", color: "#e0e6f0", fontSize: "11px" }} />
             {showSymbols && symbolSearch && (
               <div style={{ position: "absolute", top: "100%", left: 0, right: 0, background: "#0d111a",
                             border: "1px solid #1a2332", borderRadius: "0 0 2px 2px", maxHeight: "150px",
                             overflowY: "auto", zIndex: 50 }}>
                 {filteredSymbols.map(s => (
                   <div key={s} onClick={() => { setSymbol(s); setSymbolSearch(""); setShowSymbols(false); }}
-                    style={{ padding: "4px 6px", fontSize: "9px", cursor: "pointer", color: "#b0b8c8", borderBottom: "1px solid #1a2332" }}
+                    style={{ padding: "4px 6px", fontSize: "10px", cursor: "pointer", color: "#b0b8c8", borderBottom: "1px solid #1a2332" }}
                     onMouseEnter={(e) => e.target.style.background = "rgba(0,217,255,0.1)"}
                     onMouseLeave={(e) => e.target.style.background = "transparent"}>
                     {s}
@@ -684,10 +770,10 @@ export default function AUOTerminal() {
 
           {/* Client */}
           <div>
-            <label style={{ fontSize: "8px", color: "#7a8599", marginBottom: "2px", display: "block" }}>CLIENT</label>
+            <label style={{ fontSize: "9px", color: "#7a8599", marginBottom: "2px", display: "block" }}>CLIENT</label>
             <select value={cpty} onChange={(e) => setCpty(e.target.value)}
               style={{ width: "100%", padding: "4px 6px", background: "#050810", border: "1px solid #1a2332",
-                       borderRadius: "2px", color: "#e0e6f0", fontSize: "10px" }}>
+                       borderRadius: "2px", color: "#e0e6f0", fontSize: "11px" }}>
               <option value="">Select...</option>
               {MOCK_CLIENTS.map(c => <option key={c.cpty_id} value={c.cpty_id}>{c.cpty_id} - {c.client_name}</option>)}
             </select>
@@ -695,23 +781,23 @@ export default function AUOTerminal() {
 
           {/* Quantity */}
           <div>
-            <label style={{ fontSize: "8px", color: "#7a8599", marginBottom: "2px", display: "block" }}>QUANTITY</label>
+            <label style={{ fontSize: "9px", color: "#7a8599", marginBottom: "2px", display: "block" }}>QUANTITY</label>
             <input type="number" placeholder="50000" value={qty} onChange={(e) => setQty(e.target.value)}
               style={{ width: "100%", padding: "4px 6px", background: "#050810", border: "1px solid #1a2332",
-                       borderRadius: "2px", color: "#e0e6f0", fontSize: "10px" }} />
+                       borderRadius: "2px", color: "#e0e6f0", fontSize: "11px" }} />
           </div>
 
           {/* Notes */}
           <div>
-            <label style={{ fontSize: "8px", color: "#7a8599", marginBottom: "2px", display: "block" }}>NOTES</label>
+            <label style={{ fontSize: "9px", color: "#7a8599", marginBottom: "2px", display: "block" }}>NOTES</label>
             <textarea placeholder="EOD compliance required..." value={notes} onChange={(e) => setNotes(e.target.value)} rows={3}
               style={{ width: "100%", padding: "4px 6px", background: "#050810", border: "1px solid #1a2332",
-                       borderRadius: "2px", color: "#e0e6f0", fontSize: "9px", resize: "vertical" }} />
+                       borderRadius: "2px", color: "#e0e6f0", fontSize: "10px", resize: "vertical" }} />
           </div>
 
           {/* Time Slider */}
           <div style={{ padding: "6px", background: "#0d111a", borderRadius: "3px", border: "1px solid #1a2332" }}>
-            <div style={{ display: "flex", justifyContent: "space-between", fontSize: "8px", color: "#7a8599", marginBottom: "3px" }}>
+            <div style={{ display: "flex", justifyContent: "space-between", fontSize: "9px", color: "#7a8599", marginBottom: "3px" }}>
               <span>TIME TO CLOSE</span>
               <span style={{ color: ttc <= 25 ? "#ff4444" : ttc <= 60 ? "#ff8800" : "#e0e6f0", fontWeight: 700 }}>
                 {ttc}min {ttc <= 25 && "(CAS)"}
@@ -719,7 +805,7 @@ export default function AUOTerminal() {
             </div>
             <input type="range" min={5} max={380} value={ttc} onChange={(e) => setTtc(+e.target.value)}
               style={{ width: "100%", accentColor: ttc <= 25 ? "#ff4444" : "#00d9ff" }} />
-            <div style={{ display: "flex", justifyContent: "space-between", fontSize: "7px", color: "#7a8599", marginTop: "2px" }}>
+            <div style={{ display: "flex", justifyContent: "space-between", fontSize: "8px", color: "#7a8599", marginTop: "2px" }}>
               <span>9:30</span><span>11AM</span><span>1PM</span><span>2:30</span><span>3:05</span><span>3:20</span>
             </div>
           </div>
@@ -727,55 +813,53 @@ export default function AUOTerminal() {
           {/* Status */}
           <div style={{ padding: "6px", borderRadius: "3px", background: loading ? "rgba(0,217,255,0.08)" : hasRun ? "rgba(0,217,102,0.08)" : "#0d111a",
                         border: `1px solid ${loading ? "#00d9ff" : hasRun ? "#00d966" : "#1a2332"}`,
-                        display: "flex", alignItems: "center", justifyContent: "center", gap: "6px", fontSize: "9px", fontWeight: 600 }}>
+                        display: "flex", alignItems: "center", justifyContent: "center", gap: "6px", fontSize: "10px", fontWeight: 600 }}>
             {loading ? (
               <>
-                <Activity size={10} className="pulse" style={{ color: "#00d9ff" }} />
+                <Activity size={11} className="pulse" style={{ color: "#00d9ff" }} />
                 <span style={{ color: "#00d9ff" }}>COMPUTING...</span>
               </>
             ) : hasRun ? (
               <>
-                <Check size={10} style={{ color: "#00d966" }} />
+                <Check size={11} style={{ color: "#00d966" }} />
                 <span style={{ color: "#00d966" }}>LIVE AUTO-RECALC</span>
               </>
             ) : (
               <>
-                <CircleDot size={10} style={{ color: "#7a8599" }} />
+                <CircleDot size={11} style={{ color: "#7a8599" }} />
                 <span style={{ color: "#7a8599" }}>{!symbol ? "ENTER SYMBOL" : !cpty ? "SELECT CLIENT" : "ENTER QTY"}</span>
               </>
             )}
           </div>
 
           {hasRun && (
-  <div style={{ padding: "8px", background: "#0a0e1a", borderTop: "1px solid #1a2332", display: "flex", gap: "8px" }}>
-    
-    {/* UPDATED SUBMIT BUTTON */}
-    <button onClick={handleSubmit}
-      style={{ flex: 1, padding: "12px", background: "#00d9ff", border: "none", borderRadius: "3px",
-               color: "#000", fontSize: "11px", fontWeight: 700, cursor: "pointer", display: "flex",
-               alignItems: "center", justifyContent: "center", gap: "6px" }}>
-      <Send size={12} /> SUBMIT ORDER
-    </button>
+            <div style={{ padding: "8px", background: "#0a0e1a", borderTop: "1px solid #1a2332", display: "flex", gap: "8px" }}>
+              <button onClick={handleSubmit}
+                style={{ flex: 1, padding: "12px", background: "#00d9ff", border: "none", borderRadius: "3px",
+                         color: "#000", fontSize: "12px", fontWeight: 700, cursor: "pointer", display: "flex",
+                         alignItems: "center", justifyContent: "center", gap: "6px" }}>
+                <Send size={13} /> SUBMIT ORDER
+              </button>
 
-    <button onClick={resetAll}
-      style={{ padding: "12px 20px", background: "transparent", border: "1px solid #1a2332",
-               borderRadius: "3px", color: "#7a8599", fontSize: "10px", cursor: "pointer" }}>
-      CANCEL
-    </button>
-  </div>
-)}
+              <button onClick={resetAll}
+                style={{ padding: "12px 20px", background: "transparent", border: "1px solid #1a2332",
+                         borderRadius: "3px", color: "#7a8599", fontSize: "11px", cursor: "pointer" }}>
+                CANCEL
+              </button>
+            </div>
+          )}
 
           {/* Presets */}
           <div style={{ marginTop: "auto", paddingTop: "8px", borderTop: "1px solid #1a2332" }}>
-            <div style={{ fontSize: "7px", color: "#7a8599", marginBottom: "4px", textTransform: "uppercase" }}>QUICK PRESETS</div>
+            <div style={{ fontSize: "8px", color: "#7a8599", marginBottom: "4px", textTransform: "uppercase" }}>QUICK PRESETS</div>
             {[
-  { l: "CAS EOD", sym: "RELIANCE.NS", cl: "GS_NY_001", q: "50000", n: "EOD compliance required - must attain position by close", t: 25 },
-  { l: "VWAP AM", sym: "INFY.NS", cl: "VAN_US_007", q: "75000", n: "VWAP must complete by 2pm", t: 330 },
-  { l: "URGENT", sym: "HDFCBANK.NS", cl: "CITADEL_017", q: "200000", n: "Urgent buy - critical allocation", t: 60 },
-].map(pr => (
-              <button key={pr.l} onClick={() => { setSymbol(pr.sym); setCpty(pr.cl); setQty(pr.q); setNotes(pr.n); setTtc(pr.t); setSymbolSearch(""); setDriverOverrides({}); }}
+              { l: "CAS EOD", sym: "RELIANCE.NS", cl: "GS_NY_001", q: "50000", n: "EOD compliance required - must attain position by close", t: 25 },
+              { l: "VWAP AM", sym: "INFY.NS", cl: "VAN_US_007", q: "75000", n: "VWAP must complete by 2pm", t: 330 },
+              { l: "URGENT", sym: "HDFCBANK.NS", cl: "CITADEL_017", q: "200000", n: "Urgent buy - critical allocation", t: 60 },
+            ].map(pr => (
+              <button key={pr.l} onClick={() => { setSymbol(pr.sym); setCpty(pr.cl); setQty(pr.q); setNotes(pr.n); setTtc(pr.t); setSymbolSearch(""); setDriverOverrides({}); setLockedFields(new Set()); }}
                 style={{ width: "100%", padding: "4px 6px", background: "#0d111a", border: "1px solid #1a2332",
-                         borderRadius: "2px", color: "#b0b8c8", fontSize: "8px", cursor: "pointer", textAlign: "left",
+                         borderRadius: "2px", color: "#b0b8c8", fontSize: "9px", cursor: "pointer", textAlign: "left",
                          marginBottom: "3px" }}
                 onMouseEnter={(e) => e.target.style.borderColor = "#00d9ff"}
                 onMouseLeave={(e) => e.target.style.borderColor = "#1a2332"}>
@@ -794,39 +878,37 @@ export default function AUOTerminal() {
             </>
           ) : !loading ? (
             <div style={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: "8px", color: "#7a8599" }}>
-              <SlidersHorizontal size={24} style={{ opacity: 0.3 }} />
-              <span style={{ fontSize: "10px" }}>ENTER ORDER DETAILS TO GENERATE PREFILL</span>
+              <SlidersHorizontal size={26} style={{ opacity: 0.3 }} />
+              <span style={{ fontSize: "11px" }}>ENTER ORDER DETAILS TO GENERATE PREFILL</span>
             </div>
           ) : (
             <div style={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: "8px", color: "#00d9ff" }}>
-              <Activity size={20} className="pulse" />
-              <span style={{ fontSize: "10px" }}>COMPUTING INTELLIGENT PREFILL...</span>
+              <Activity size={22} className="pulse" />
+              <span style={{ fontSize: "11px" }}>COMPUTING INTELLIGENT PREFILL...</span>
             </div>
           )}
         </div>
 
-        {/* BOTTOM RIGHT: Parameters Grid (3 columns) + Actions */}
-        <div style={{ gridColumn: "2", gridRow: "2", background: "#0a0e1a", padding: "0", display: "flex", flexDirection: "column", overflowY: "auto" }}>
-          
-          {/* Parameters Grid */}
-          <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: "1px", flex: 1 }}>
+        {/* BOTTOM RIGHT: Parameters Grid (3 columns) */}
+        <div style={{ gridColumn: "2", gridRow: "2", background: "#0a0e1a", padding: "0", display: "flex", flexDirection: "column", overflow: "hidden" }}>
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: "1px", flex: 1, overflowY: "auto" }}>
           
           {/* Column 1: Core Execution */}
           <div style={{ background: "#050810", display: "flex", flexDirection: "column" }}>
             <PanelHeader title="Core Execution" icon={Target} tag={ctx?.cas_active ? "CAS" : null} />
             <div style={{ padding: "4px" }}>
-              <CompactField label="Instrument" value={getValue(p.instrument)} hasRun={hasRun} confidence={p.instrument?.confidence} rationale={p.instrument?.rationale} icon={Box} disabled recalcGeneration={recalcGen} />
-              <CompactField label="Side" value={getValue(p.side)} options={["Buy", "Sell"]} hasRun={hasRun} confidence={p.side?.confidence} rationale={p.side?.rationale} icon={p.side?.value === "Sell" ? ArrowDownRight : ArrowUpRight} onDriverChange={handleDriverChange} recalcGeneration={recalcGen} />
-              <CompactField label="Quantity" value={getValue(p.quantity)} hasRun={hasRun} confidence={p.quantity?.confidence} rationale={p.quantity?.rationale} icon={BarChart3} type="number" recalcGeneration={recalcGen} />
-              <CompactField label="Order Type" value={getValue(p.order_type)} options={["Market", "Limit", "Stop", "Stop_Limit"]} hasRun={hasRun} confidence={p.order_type?.confidence} rationale={p.order_type?.rationale} icon={Layers} recalcGeneration={recalcGen} />
-              <CompactField label="Price Type" value={getValue(p.price_type)} options={["Market", "Limit", "Best", "Pegged"]} hasRun={hasRun} confidence={p.price_type?.confidence} rationale={p.price_type?.rationale} icon={TrendingUp} recalcGeneration={recalcGen} />
-              <CompactField label="Limit Price" value={getValue(p.limit_price)} hasRun={hasRun} confidence={p.limit_price?.confidence} rationale={p.limit_price?.rationale} icon={Target} type="number" recalcGeneration={recalcGen} />
-              <CompactField label="TIF" value={getValue(p.tif)} options={["GFD", "GTD", "IOC", "FOK", "CAS"]} hasRun={hasRun} confidence={p.tif?.confidence} rationale={p.tif?.rationale} icon={Clock} recalcGeneration={recalcGen} />
-              <CompactField label="Release" value={getValue(p.release_date)} hasRun={hasRun} confidence={p.release_date?.confidence} rationale={p.release_date?.rationale} icon={Clock} type="date" recalcGeneration={recalcGen} />
-              <CompactField label="Hold" value={getValue(p.hold)} options={["Yes", "No"]} hasRun={hasRun} confidence={p.hold?.confidence} rationale={p.hold?.rationale} icon={Shield} recalcGeneration={recalcGen} />
-              <CompactField label="Category" value={getValue(p.category)} options={["Client", "House", "Proprietary"]} hasRun={hasRun} confidence={p.category?.confidence} rationale={p.category?.rationale} icon={Shield} recalcGeneration={recalcGen} />
-              <CompactField label="Capacity" value={getValue(p.capacity)} options={["Principal", "Agent", "Riskless_Principal"]} hasRun={hasRun} confidence={p.capacity?.confidence} rationale={p.capacity?.rationale} icon={Shield} recalcGeneration={recalcGen} />
-              <CompactField label="Account" value={getValue(p.account)} hasRun={hasRun} confidence={p.account?.confidence} rationale={p.account?.rationale} icon={Shield} recalcGeneration={recalcGen} />
+              <CompactField label="Instrument" value={getValue(p.instrument)} hasRun={hasRun} confidence={p.instrument?.confidence} rationale={p.instrument?.rationale} icon={Box} disabled recalcGeneration={recalcGen} isLocked={lockedFields.has("Instrument")} onLockToggle={handleLockToggle} />
+              <CompactField label="Side" value={getValue(p.side)} options={["Buy", "Sell"]} hasRun={hasRun} confidence={p.side?.confidence} rationale={p.side?.rationale} icon={p.side?.value === "Sell" ? ArrowDownRight : ArrowUpRight} onDriverChange={handleDriverChange} recalcGeneration={recalcGen} isLocked={lockedFields.has("Side")} onLockToggle={handleLockToggle} />
+              <CompactField label="Quantity" value={getValue(p.quantity)} hasRun={hasRun} confidence={p.quantity?.confidence} rationale={p.quantity?.rationale} icon={BarChart3} type="number" recalcGeneration={recalcGen} isLocked={lockedFields.has("Quantity")} onLockToggle={handleLockToggle} />
+              <CompactField label="Order Type" value={getValue(p.order_type)} options={["Market", "Limit", "Stop", "Stop_Limit"]} hasRun={hasRun} confidence={p.order_type?.confidence} rationale={p.order_type?.rationale} icon={Layers} recalcGeneration={recalcGen} isLocked={lockedFields.has("Order Type")} onLockToggle={handleLockToggle} />
+              <CompactField label="Price Type" value={getValue(p.price_type)} options={["Market", "Limit", "Best", "Pegged"]} hasRun={hasRun} confidence={p.price_type?.confidence} rationale={p.price_type?.rationale} icon={TrendingUp} recalcGeneration={recalcGen} isLocked={lockedFields.has("Price Type")} onLockToggle={handleLockToggle} />
+              <CompactField label="Limit Price" value={getValue(p.limit_price)} hasRun={hasRun} confidence={p.limit_price?.confidence} rationale={p.limit_price?.rationale} icon={Target} type="number" recalcGeneration={recalcGen} isLocked={lockedFields.has("Limit Price")} onLockToggle={handleLockToggle} />
+              <CompactField label="TIF" value={getValue(p.tif)} options={["GFD", "GTD", "IOC", "FOK", "CAS"]} hasRun={hasRun} confidence={p.tif?.confidence} rationale={p.tif?.rationale} icon={Clock} recalcGeneration={recalcGen} isLocked={lockedFields.has("TIF")} onLockToggle={handleLockToggle} />
+              <CompactField label="Release" value={getValue(p.release_date)} hasRun={hasRun} confidence={p.release_date?.confidence} rationale={p.release_date?.rationale} icon={Clock} type="date" recalcGeneration={recalcGen} isLocked={lockedFields.has("Release")} onLockToggle={handleLockToggle} />
+              <CompactField label="Hold" value={getValue(p.hold)} options={["Yes", "No"]} hasRun={hasRun} confidence={p.hold?.confidence} rationale={p.hold?.rationale} icon={Shield} recalcGeneration={recalcGen} isLocked={lockedFields.has("Hold")} onLockToggle={handleLockToggle} />
+              <CompactField label="Category" value={getValue(p.category)} options={["Client", "House", "Proprietary"]} hasRun={hasRun} confidence={p.category?.confidence} rationale={p.category?.rationale} icon={Shield} recalcGeneration={recalcGen} isLocked={lockedFields.has("Category")} onLockToggle={handleLockToggle} />
+              <CompactField label="Capacity" value={getValue(p.capacity)} options={["Principal", "Agent", "Riskless_Principal"]} hasRun={hasRun} confidence={p.capacity?.confidence} rationale={p.capacity?.rationale} icon={Shield} recalcGeneration={recalcGen} isLocked={lockedFields.has("Capacity")} onLockToggle={handleLockToggle} />
+              <CompactField label="Account" value={getValue(p.account)} hasRun={hasRun} confidence={p.account?.confidence} rationale={p.account?.rationale} icon={Shield} recalcGeneration={recalcGen} isLocked={lockedFields.has("Account")} onLockToggle={handleLockToggle} />
             </div>
           </div>
 
@@ -834,16 +916,16 @@ export default function AUOTerminal() {
           <div style={{ background: "#050810", display: "flex", flexDirection: "column" }}>
             <PanelHeader title="Algo Strategy" icon={Cpu} />
             <div style={{ padding: "4px" }}>
-              <CompactField label="Service" value={getValue(p.service)} options={["BlueBox 2", "Market", "DMA"]} hasRun={hasRun} confidence={p.service?.confidence} rationale={p.service?.rationale} icon={Cpu} recalcGeneration={recalcGen} />
-              <CompactField label="Executor" value={getValue(p.executor)} options={["VWAP", "TWAP", "POV", "ICEBERG"]} hasRun={hasRun} confidence={p.executor?.confidence} rationale={p.executor?.rationale} icon={Activity} recalcGeneration={recalcGen} />
-              <CompactField label="Pricing" value={getValue(p.pricing)} options={["Adaptive", "Passive", "Aggressive"]} hasRun={hasRun} confidence={p.pricing?.confidence} rationale={p.pricing?.rationale} icon={TrendingUp} recalcGeneration={recalcGen} />
-              <CompactField label="Layering" value={getValue(p.layering)} options={["Auto", "Manual", "Percentage"]} hasRun={hasRun} confidence={p.layering?.confidence} rationale={p.layering?.rationale} icon={Layers} recalcGeneration={recalcGen} />
-              <CompactField label="Urgency" value={getValue(p.urgency_setting)} options={["Low", "Medium", "High", "Auto"]} hasRun={hasRun} confidence={p.urgency_setting?.confidence} rationale={p.urgency_setting?.rationale} icon={Gauge} recalcGeneration={recalcGen} />
-              <CompactField label="Get Done" value={getValue(p.get_done)} options={["True", "False"]} hasRun={hasRun} confidence={p.get_done?.confidence} rationale={p.get_done?.rationale} icon={Check} recalcGeneration={recalcGen} />
-              <CompactField label="Open Print" value={getValue(p.opening_print)} options={["True", "False"]} hasRun={hasRun} confidence={p.opening_print?.confidence} rationale={p.opening_print?.rationale} icon={Eye} recalcGeneration={recalcGen} />
-              <CompactField label="Open %" value={getValue(p.opening_pct)} hasRun={hasRun} confidence={p.opening_pct?.confidence} rationale={p.opening_pct?.rationale} icon={Eye} type="number" recalcGeneration={recalcGen} />
-              <CompactField label="Close Print" value={getValue(p.closing_print)} options={["True", "False"]} hasRun={hasRun} confidence={p.closing_print?.confidence} rationale={p.closing_print?.rationale} icon={EyeOff} recalcGeneration={recalcGen} />
-              <CompactField label="Close %" value={getValue(p.closing_pct)} hasRun={hasRun} confidence={p.closing_pct?.confidence} rationale={p.closing_pct?.rationale} icon={EyeOff} type="number" recalcGeneration={recalcGen} />
+              <CompactField label="Service" value={getValue(p.service)} options={["BlueBox 2", "Market", "DMA"]} hasRun={hasRun} confidence={p.service?.confidence} rationale={p.service?.rationale} icon={Cpu} recalcGeneration={recalcGen} isLocked={lockedFields.has("Service")} onLockToggle={handleLockToggle} />
+              <CompactField label="Executor" value={getValue(p.executor)} options={["VWAP", "TWAP", "POV", "ICEBERG"]} hasRun={hasRun} confidence={p.executor?.confidence} rationale={p.executor?.rationale} icon={Activity} recalcGeneration={recalcGen} isLocked={lockedFields.has("Executor")} onLockToggle={handleLockToggle} />
+              <CompactField label="Pricing" value={getValue(p.pricing)} options={["Adaptive", "Passive", "Aggressive"]} hasRun={hasRun} confidence={p.pricing?.confidence} rationale={p.pricing?.rationale} icon={TrendingUp} recalcGeneration={recalcGen} isLocked={lockedFields.has("Pricing")} onLockToggle={handleLockToggle} />
+              <CompactField label="Layering" value={getValue(p.layering)} options={["Auto", "Manual", "Percentage"]} hasRun={hasRun} confidence={p.layering?.confidence} rationale={p.layering?.rationale} icon={Layers} recalcGeneration={recalcGen} isLocked={lockedFields.has("Layering")} onLockToggle={handleLockToggle} />
+              <CompactField label="Urgency" value={getValue(p.urgency_setting)} options={["Low", "Medium", "High", "Auto"]} hasRun={hasRun} confidence={p.urgency_setting?.confidence} rationale={p.urgency_setting?.rationale} icon={Gauge} recalcGeneration={recalcGen} isLocked={lockedFields.has("Urgency")} onLockToggle={handleLockToggle} />
+              <CompactField label="Get Done" value={getValue(p.get_done)} options={["True", "False"]} hasRun={hasRun} confidence={p.get_done?.confidence} rationale={p.get_done?.rationale} icon={Check} recalcGeneration={recalcGen} isLocked={lockedFields.has("Get Done")} onLockToggle={handleLockToggle} />
+              <CompactField label="Open Print" value={getValue(p.opening_print)} options={["True", "False"]} hasRun={hasRun} confidence={p.opening_print?.confidence} rationale={p.opening_print?.rationale} icon={Eye} recalcGeneration={recalcGen} isLocked={lockedFields.has("Open Print")} onLockToggle={handleLockToggle} />
+              <CompactField label="Open %" value={getValue(p.opening_pct)} hasRun={hasRun} confidence={p.opening_pct?.confidence} rationale={p.opening_pct?.rationale} icon={Eye} type="number" recalcGeneration={recalcGen} isLocked={lockedFields.has("Open %")} onLockToggle={handleLockToggle} />
+              <CompactField label="Close Print" value={getValue(p.closing_print)} options={["True", "False"]} hasRun={hasRun} confidence={p.closing_print?.confidence} rationale={p.closing_print?.rationale} icon={EyeOff} recalcGeneration={recalcGen} isLocked={lockedFields.has("Close Print")} onLockToggle={handleLockToggle} />
+              <CompactField label="Close %" value={getValue(p.closing_pct)} hasRun={hasRun} confidence={p.closing_pct?.confidence} rationale={p.closing_pct?.rationale} icon={EyeOff} type="number" recalcGeneration={recalcGen} isLocked={lockedFields.has("Close %")} onLockToggle={handleLockToggle} />
             </div>
           </div>
 
@@ -851,42 +933,25 @@ export default function AUOTerminal() {
           <div style={{ background: "#050810", display: "flex", flexDirection: "column" }}>
             <PanelHeader title="Advanced" icon={SlidersHorizontal} />
             <div style={{ padding: "4px" }}>
-              <div style={{ fontSize: "8px", color: "#7a8599", padding: "3px 0", fontWeight: 600 }}>CROSSING</div>
-              <CompactField label="Min Cross" value={getValue(p.min_cross_qty)} hasRun={hasRun} confidence={p.min_cross_qty?.confidence} rationale={p.min_cross_qty?.rationale} icon={Crosshair} type="number" recalcGeneration={recalcGen} />
-              <CompactField label="Max Cross" value={getValue(p.max_cross_qty)} hasRun={hasRun} confidence={p.max_cross_qty?.confidence} rationale={p.max_cross_qty?.rationale} icon={Crosshair} type="number" recalcGeneration={recalcGen} />
-              <CompactField label="Cross Unit" value={getValue(p.cross_qty_unit)} options={["Shares", "Value", "Percentage"]} hasRun={hasRun} confidence={p.cross_qty_unit?.confidence} rationale={p.cross_qty_unit?.rationale} icon={Crosshair} recalcGeneration={recalcGen} />
-              <CompactField label="Leave Active" value={getValue(p.leave_active_slice)} options={["True", "False"]} hasRun={hasRun} confidence={p.leave_active_slice?.confidence} rationale={p.leave_active_slice?.rationale} icon={Crosshair} recalcGeneration={recalcGen} />
+              <div style={{ fontSize: "9px", color: "#7a8599", padding: "3px 0", fontWeight: 600 }}>CROSSING</div>
+              <CompactField label="Min Cross" value={getValue(p.min_cross_qty)} hasRun={hasRun} confidence={p.min_cross_qty?.confidence} rationale={p.min_cross_qty?.rationale} icon={Crosshair} type="number" recalcGeneration={recalcGen} isLocked={lockedFields.has("Min Cross")} onLockToggle={handleLockToggle} />
+              <CompactField label="Max Cross" value={getValue(p.max_cross_qty)} hasRun={hasRun} confidence={p.max_cross_qty?.confidence} rationale={p.max_cross_qty?.rationale} icon={Crosshair} type="number" recalcGeneration={recalcGen} isLocked={lockedFields.has("Max Cross")} onLockToggle={handleLockToggle} />
+              <CompactField label="Cross Unit" value={getValue(p.cross_qty_unit)} options={["Shares", "Value", "Percentage"]} hasRun={hasRun} confidence={p.cross_qty_unit?.confidence} rationale={p.cross_qty_unit?.rationale} icon={Crosshair} recalcGeneration={recalcGen} isLocked={lockedFields.has("Cross Unit")} onLockToggle={handleLockToggle} />
+              <CompactField label="Leave Active" value={getValue(p.leave_active_slice)} options={["True", "False"]} hasRun={hasRun} confidence={p.leave_active_slice?.confidence} rationale={p.leave_active_slice?.rationale} icon={Crosshair} recalcGeneration={recalcGen} isLocked={lockedFields.has("Leave Active")} onLockToggle={handleLockToggle} />
               
-              <div style={{ fontSize: "8px", color: "#7a8599", padding: "3px 0", fontWeight: 600, marginTop: "6px" }}>IWOULD</div>
-              <CompactField label="IW Price" value={getValue(p.iwould_price)} hasRun={hasRun} confidence={p.iwould_price?.confidence} rationale={p.iwould_price?.rationale} icon={Target} type="number" recalcGeneration={recalcGen} />
-              <CompactField label="IW Qty" value={getValue(p.iwould_qty)} hasRun={hasRun} confidence={p.iwould_qty?.confidence} rationale={p.iwould_qty?.rationale} icon={BarChart3} type="number" recalcGeneration={recalcGen} />
+              <div style={{ fontSize: "9px", color: "#7a8599", padding: "3px 0", fontWeight: 600, marginTop: "6px" }}>IWOULD</div>
+              <CompactField label="IW Price" value={getValue(p.iwould_price)} hasRun={hasRun} confidence={p.iwould_price?.confidence} rationale={p.iwould_price?.rationale} icon={Target} type="number" recalcGeneration={recalcGen} isLocked={lockedFields.has("IW Price")} onLockToggle={handleLockToggle} />
+              <CompactField label="IW Qty" value={getValue(p.iwould_qty)} hasRun={hasRun} confidence={p.iwould_qty?.confidence} rationale={p.iwould_qty?.rationale} icon={BarChart3} type="number" recalcGeneration={recalcGen} isLocked={lockedFields.has("IW Qty")} onLockToggle={handleLockToggle} />
               
-              <div style={{ fontSize: "8px", color: "#7a8599", padding: "3px 0", fontWeight: 600, marginTop: "6px" }}>DYNAMIC LIMITS</div>
-              <CompactField label="Lim Option" value={getValue(p.limit_option)} options={["Order Limit", "Primary Best Bid", "Primary Best Ask", "VWAP", "Midpoint"]} hasRun={hasRun} confidence={p.limit_option?.confidence} rationale={p.limit_option?.rationale} icon={SlidersHorizontal} recalcGeneration={recalcGen} />
-              <CompactField label="Lim Offset" value={getValue(p.limit_offset)} hasRun={hasRun} confidence={p.limit_offset?.confidence} rationale={p.limit_offset?.rationale} icon={SlidersHorizontal} type="number" recalcGeneration={recalcGen} />
-              <CompactField label="Offset Unit" value={getValue(p.offset_unit)} options={["Tick", "BPS", "Percentage"]} hasRun={hasRun} confidence={p.offset_unit?.confidence} rationale={p.offset_unit?.rationale} icon={SlidersHorizontal} recalcGeneration={recalcGen} />
-            </div>
-          </div>
-          </div>
-
-          {/* Action Bar */}
-          {/* {hasRun && (
-            <div style={{ padding: "8px", background: "#0a0e1a", borderTop: "1px solid #1a2332", display: "flex", gap: "8px" }}>
-              <button onClick={() => alert("Order submitted! (mock)")}
-                style={{ flex: 1, padding: "12px", background: "#00d9ff", border: "none", borderRadius: "3px",
-                         color: "#000", fontSize: "11px", fontWeight: 700, cursor: "pointer", display: "flex",
-                         alignItems: "center", justifyContent: "center", gap: "6px" }}>
-                <Send size={12} /> SUBMIT ORDER
-              </button>
-              <button onClick={resetAll}
-                style={{ padding: "12px 20px", background: "transparent", border: "1px solid #1a2332",
-                         borderRadius: "3px", color: "#7a8599", fontSize: "10px", cursor: "pointer" }}>
-                CANCEL
-              </button>
-            </div>
-          )} */}
-        </div>
-      </div>
-    </div>
-  );
+              <div style={{ fontSize: "9px", color: "#7a8599", padding: "3px 0", fontWeight: 600, marginTop: "6px" }}>DYNAMIC LIMITS</div>
+              <CompactField label="Lim Option" value={getValue(p.limit_option)} options={["Order Limit", "Primary Best Bid", "Primary Best Ask", "VWAP", "Midpoint"]} hasRun={hasRun} confidence={p.limit_option?.confidence} rationale={p.limit_option?.rationale} icon={SlidersHorizontal} recalcGeneration={recalcGen} isLocked={lockedFields.has("Lim Option")} onLockToggle={handleLockToggle} />
+              <CompactField label="Lim Offset" value={getValue(p.limit_offset)} hasRun={hasRun} confidence={p.limit_offset?.confidence} rationale={p.limit_offset?.rationale} icon={SlidersHorizontal} type="number" recalcGeneration={recalcGen} isLocked={lockedFields.has("Lim Offset")} onLockToggle={handleLockToggle} />
+              <CompactField label="Offset Unit" value={getValue(p.offset_unit)} options={["Tick", "BPS", "Percentage"]} hasRun={hasRun} confidence={p.offset_unit?.confidence} rationale={p.offset_unit?.rationale} icon={SlidersHorizontal} recalcGeneration={recalcGen} isLocked={lockedFields.has("Offset Unit")} onLockToggle={handleLockToggle} />
+</div>
+</div>
+</div>
+</div>
+</div>
+</div>
+);
 }
