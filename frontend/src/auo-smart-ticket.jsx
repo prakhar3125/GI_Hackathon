@@ -10,29 +10,168 @@ import {
 // ─── API CONFIG ─────────────────────────────────────────────────
 const API_BASE = "http://localhost:8000"; // Toggle: null for mock, "http://localhost:8000" for real
 
-// ─── MOCK BACKEND ───────────────────────────────────────────────
 const MOCK_CLIENTS = [
-  { cpty_id: "Client_XYZ", client_name: "XYZ Capital", urgency_factor: 0.85 },
-  { cpty_id: "Client_ABC", client_name: "ABC Asset Management", urgency_factor: 0.50 },
-  { cpty_id: "Client_DEF", client_name: "DEF Securities", urgency_factor: 0.30 },
-  { cpty_id: "Client_GHI", client_name: "GHI Partners", urgency_factor: 0.70 },
+  // Tier 1 - High Frequency / Urgent Clients
+  { cpty_id: "GS_NY_001", client_name: "Goldman Sachs Asset Management", urgency_factor: 0.95 },
+  { cpty_id: "JPM_LON_002", client_name: "JP Morgan Investment Bank", urgency_factor: 0.92 },
+  { cpty_id: "MS_NYC_003", client_name: "Morgan Stanley Wealth Management", urgency_factor: 0.88 },
+  { cpty_id: "CITI_SG_004", client_name: "Citigroup Global Markets", urgency_factor: 0.90 },
+  { cpty_id: "BARC_UK_005", client_name: "Barclays Capital", urgency_factor: 0.87 },
+
+  // Tier 2 - Active Institutional Clients
+  { cpty_id: "BLK_US_006", client_name: "BlackRock Institutional", urgency_factor: 0.82 },
+  { cpty_id: "VAN_US_007", client_name: "Vanguard Group", urgency_factor: 0.65 },
+  { cpty_id: "STT_BOS_008", client_name: "State Street Global Advisors", urgency_factor: 0.78 },
+  { cpty_id: "FID_US_009", client_name: "Fidelity Investments", urgency_factor: 0.75 },
+  { cpty_id: "PIMCO_010", client_name: "PIMCO Fixed Income", urgency_factor: 0.68 },
+  { cpty_id: "INVESCO_011", client_name: "Invesco Asset Management", urgency_factor: 0.72 },
+  { cpty_id: "TCAP_012", client_name: "T. Rowe Price", urgency_factor: 0.70 },
+  { cpty_id: "FRANK_013", client_name: "Franklin Templeton", urgency_factor: 0.67 },
+
+  // Tier 3 - Hedge Funds
+  { cpty_id: "BWATER_014", client_name: "Bridgewater Associates", urgency_factor: 0.85 },
+  { cpty_id: "AQR_015", client_name: "AQR Capital Management", urgency_factor: 0.80 },
+  { cpty_id: "RENTECH_016", client_name: "Renaissance Technologies", urgency_factor: 0.93 },
+  { cpty_id: "CITADEL_017", client_name: "Citadel LLC", urgency_factor: 0.91 },
+  { cpty_id: "2SIGMA_018", client_name: "Two Sigma Investments", urgency_factor: 0.89 },
+  { cpty_id: "DESHAW_019", client_name: "D.E. Shaw Group", urgency_factor: 0.86 },
+  { cpty_id: "MILLEN_020", client_name: "Millennium Management", urgency_factor: 0.84 },
+
+  // Tier 4 - Pension Funds & Insurance
+  { cpty_id: "CALPERS_021", client_name: "CalPERS", urgency_factor: 0.45 },
+  { cpty_id: "NYPENS_022", client_name: "NY State Pension Fund", urgency_factor: 0.48 },
+  { cpty_id: "ONTPEN_023", client_name: "Ontario Teachers Pension", urgency_factor: 0.50 },
+  { cpty_id: "NORGES_024", client_name: "Norges Bank Investment", urgency_factor: 0.42 },
+  { cpty_id: "METLIFE_025", client_name: "MetLife Investment", urgency_factor: 0.55 },
+  { cpty_id: "PRUDEN_026", client_name: "Prudential Financial", urgency_factor: 0.52 },
+
+  // Tier 5 - Sovereign Wealth & Endowments
+  { cpty_id: "ADIA_027", client_name: "Abu Dhabi Investment Authority", urgency_factor: 0.38 },
+  { cpty_id: "GIC_SG_028", client_name: "GIC Private Limited", urgency_factor: 0.40 },
+  { cpty_id: "SAFE_CN_029", client_name: "SAFE China", urgency_factor: 0.35 },
+  { cpty_id: "HARV_END_030", client_name: "Harvard Management Co", urgency_factor: 0.43 },
+  { cpty_id: "YALE_END_031", client_name: "Yale Investments", urgency_factor: 0.46 },
+
+  // Tier 6 - Boutique / Regional
+  { cpty_id: "WELLIN_032", client_name: "Wellington Management", urgency_factor: 0.63 },
+  { cpty_id: "CAPITAL_033", client_name: "Capital Group", urgency_factor: 0.60 },
+  { cpty_id: "NEUBER_034", client_name: "Neuberger Berman", urgency_factor: 0.58 },
+  { cpty_id: "ALLIANCE_035", client_name: "AllianceBernstein", urgency_factor: 0.62 },
+  { cpty_id: "JANUS_036", client_name: "Janus Henderson", urgency_factor: 0.56 },
+
+  // Tier 7 - Family Offices & Private Wealth
+  { cpty_id: "SOROS_037", client_name: "Soros Fund Management", urgency_factor: 0.73 },
+  { cpty_id: "TIGER_038", client_name: "Tiger Global Management", urgency_factor: 0.77 },
+  { cpty_id: "VIKING_039", client_name: "Viking Global Investors", urgency_factor: 0.74 },
+  { cpty_id: "MAVERICK_040", client_name: "Maverick Capital", urgency_factor: 0.71 },
+
+  // Tier 8 - Proprietary Trading / Market Makers
+  { cpty_id: "JUMP_041", client_name: "Jump Trading", urgency_factor: 0.96 },
+  { cpty_id: "VIRTU_042", client_name: "Virtu Financial", urgency_factor: 0.94 },
+  { cpty_id: "SUSQ_043", client_name: "Susquehanna International", urgency_factor: 0.95 },
+  { cpty_id: "OPTIVER_044", client_name: "Optiver", urgency_factor: 0.93 },
+  { cpty_id: "IMC_045", client_name: "IMC Trading", urgency_factor: 0.94 },
+
+  // Tier 9 - Mutual Fund Complexes
+  { cpty_id: "AMUNDI_046", client_name: "Amundi Asset Management", urgency_factor: 0.54 },
+  { cpty_id: "DWS_047", client_name: "DWS Group", urgency_factor: 0.51 },
+  { cpty_id: "LGIM_048", client_name: "Legal & General Investment", urgency_factor: 0.49 },
+  { cpty_id: "SCHROD_049", client_name: "Schroders", urgency_factor: 0.53 },
+  { cpty_id: "ABERDEEN_050", client_name: "abrdn", urgency_factor: 0.47 },
 ];
 
 const MOCK_SYMBOLS = [
-  "RELIANCE.NS", "INFY.NS", "TCS.NS", "HDFCBANK.NS", "ICICIBANK.NS",
-  "SBIN.NS", "BHARTIARTL.NS", "ITC.NS", "KOTAKBANK.NS", "LT.NS",
-  "HINDUNILVR.NS", "BAJFINANCE.NS", "MARUTI.NS", "ASIANPAINT.NS", "WIPRO.NS"
+  "RELIANCE.NS", "TCS.NS", "HDFCBANK.NS", "INFY.NS", "ICICIBANK.NS",
+  "HINDUNILVR.NS", "ITC.NS", "SBIN.NS", "BHARTIARTL.NS", "BAJFINANCE.NS",
+  "KOTAKBANK.NS", "LT.NS", "ASIANPAINT.NS", "AXISBANK.NS", "MARUTI.NS",
+  "SUNPHARMA.NS", "TITAN.NS", "ULTRACEMCO.NS", "NESTLEIND.NS", "WIPRO.NS",
+  "HCLTECH.NS", "TECHM.NS", "BAJAJFINSV.NS", "POWERGRID.NS", "NTPC.NS",
+  "TATAMOTORS.NS", "TATASTEEL.NS", "ADANIPORTS.NS", "ONGC.NS", "JSWSTEEL.NS",
+  "HINDALCO.NS", "INDUSINDBK.NS", "COALINDIA.NS", "M&M.NS", "DIVISLAB.NS",
+  "CIPLA.NS", "DRREDDY.NS", "EICHERMOT.NS", "GRASIM.NS", "HEROMOTOCO.NS",
+  "SHREECEM.NS", "BRITANNIA.NS", "APOLLOHOSP.NS", "BAJAJ-AUTO.NS", "BPCL.NS",
+  "ADANIENT.NS", "SBILIFE.NS", "HDFCLIFE.NS", "TATACONSUM.NS", "LTIM.NS",
+  "ADANIGREEN.NS", "BANKBARODA.NS", "BERGEPAINT.NS", "DLF.NS", "GODREJCP.NS",
+  "INDIGO.NS", "MARICO.NS", "PIDILITIND.NS", "SIEMENS.NS", "DABUR.NS",
+  "HAVELLS.NS", "CHOLAFIN.NS", "COLPAL.NS", "GAIL.NS", "IOC.NS",
+  "IRCTC.NS", "PFC.NS", "PNB.NS", "ZOMATO.NS", "PAYTM.NS",
+  "NYKAA.NS", "DELHIVERY.NS", "POLICYBZR.NS"
 ];
 
 const MOCK_MARKET = {
-  "RELIANCE.NS": { ltp: 2570.2, bid: 2570.0, ask: 2570.5, volatility_pct: 2.1, avg_trade_size: 7500, instrument: "RELIANCE INDS T+1" },
-  "INFY.NS": { ltp: 1848.6, bid: 1848.0, ask: 1849.0, volatility_pct: 1.4, avg_trade_size: 12000, instrument: "INFOSYS LTD T+1" },
-  "TCS.NS": { ltp: 4120.8, bid: 4120.5, ask: 4121.2, volatility_pct: 1.1, avg_trade_size: 5000, instrument: "TCS LTD T+1" },
-  "HDFCBANK.NS": { ltp: 1720.4, bid: 1720.0, ask: 1720.8, volatility_pct: 1.8, avg_trade_size: 9000, instrument: "HDFC BANK T+1" },
-  "ICICIBANK.NS": { ltp: 1285.6, bid: 1285.2, ask: 1286.0, volatility_pct: 1.6, avg_trade_size: 11000, instrument: "ICICI BANK T+1" },
-  "SBIN.NS": { ltp: 812.3, bid: 812.0, ask: 812.6, volatility_pct: 2.4, avg_trade_size: 15000, instrument: "STATE BANK T+1" },
-  "BHARTIARTL.NS": { ltp: 1680.5, bid: 1680.2, ask: 1680.8, volatility_pct: 1.3, avg_trade_size: 8000, instrument: "BHARTI AIRTEL T+1" },
-  "ITC.NS": { ltp: 465.2, bid: 465.0, ask: 465.4, volatility_pct: 0.9, avg_trade_size: 20000, instrument: "ITC LTD T+1" },
+  "RELIANCE.NS": { ltp: 2587.45, bid: 2587.20, ask: 2587.70, volatility_pct: 1.8, avg_trade_size: 8500, instrument: "RELIANCE.NS EQ" },
+  "TCS.NS": { ltp: 4156.30, bid: 4156.00, ask: 4156.60, volatility_pct: 1.2, avg_trade_size: 4200, instrument: "TCS.NS EQ" },
+  "HDFCBANK.NS": { ltp: 1742.85, bid: 1742.50, ask: 1743.20, volatility_pct: 1.5, avg_trade_size: 11000, instrument: "HDFCBANK.NS EQ" },
+  "INFY.NS": { ltp: 1876.20, bid: 1875.90, ask: 1876.50, volatility_pct: 1.3, avg_trade_size: 9800, instrument: "INFY.NS EQ" },
+  "ICICIBANK.NS": { ltp: 1298.75, bid: 1298.40, ask: 1299.10, volatility_pct: 1.7, avg_trade_size: 13500, instrument: "ICICIBANK.NS EQ" },
+  "HINDUNILVR.NS": { ltp: 2456.90, bid: 2456.50, ask: 2457.30, volatility_pct: 1.0, avg_trade_size: 3800, instrument: "HINDUNILVR.NS EQ" },
+  "ITC.NS": { ltp: 468.35, bid: 468.20, ask: 468.50, volatility_pct: 0.9, avg_trade_size: 24000, instrument: "ITC.NS EQ" },
+  "SBIN.NS": { ltp: 826.50, bid: 826.20, ask: 826.80, volatility_pct: 2.2, avg_trade_size: 18000, instrument: "SBIN.NS EQ" },
+  "BHARTIARTL.NS": { ltp: 1705.60, bid: 1705.30, ask: 1705.90, volatility_pct: 1.4, avg_trade_size: 9200, instrument: "BHARTIARTL.NS EQ" },
+  "BAJFINANCE.NS": { ltp: 7234.25, bid: 7233.50, ask: 7235.00, volatility_pct: 2.1, avg_trade_size: 1800, instrument: "BAJFINANCE.NS EQ" },
+  "KOTAKBANK.NS": { ltp: 1798.40, bid: 1798.00, ask: 1798.80, volatility_pct: 1.6, avg_trade_size: 7500, instrument: "KOTAKBANK.NS EQ" },
+  "LT.NS": { ltp: 3642.70, bid: 3642.20, ask: 3643.20, volatility_pct: 1.9, avg_trade_size: 4100, instrument: "LT.NS EQ" },
+  "ASIANPAINT.NS": { ltp: 2876.55, bid: 2876.00, ask: 2877.10, volatility_pct: 1.4, avg_trade_size: 3200, instrument: "ASIANPAINT.NS EQ" },
+  "AXISBANK.NS": { ltp: 1142.30, bid: 1142.00, ask: 1142.60, volatility_pct: 1.8, avg_trade_size: 10500, instrument: "AXISBANK.NS EQ" },
+  "MARUTI.NS": { ltp: 12456.80, bid: 12455.50, ask: 12458.10, volatility_pct: 1.7, avg_trade_size: 950, instrument: "MARUTI.NS EQ" },
+  "SUNPHARMA.NS": { ltp: 1798.25, bid: 1797.90, ask: 1798.60, volatility_pct: 1.5, avg_trade_size: 6800, instrument: "SUNPHARMA.NS EQ" },
+  "TITAN.NS": { ltp: 3487.90, bid: 3487.40, ask: 3488.40, volatility_pct: 1.6, avg_trade_size: 3500, instrument: "TITAN.NS EQ" },
+  "ULTRACEMCO.NS": { ltp: 11234.65, bid: 11233.00, ask: 11236.30, volatility_pct: 1.5, avg_trade_size: 780, instrument: "ULTRACEMCO.NS EQ" },
+  "NESTLEIND.NS": { ltp: 2587.40, bid: 2586.90, ask: 2587.90, volatility_pct: 0.8, avg_trade_size: 2100, instrument: "NESTLEIND.NS EQ" },
+  "WIPRO.NS": { ltp: 578.65, bid: 578.40, ask: 578.90, volatility_pct: 1.4, avg_trade_size: 15000, instrument: "WIPRO.NS EQ" },
+  "HCLTECH.NS": { ltp: 1876.35, bid: 1876.00, ask: 1876.70, volatility_pct: 1.3, avg_trade_size: 6200, instrument: "HCLTECH.NS EQ" },
+  "TECHM.NS": { ltp: 1687.50, bid: 1687.20, ask: 1687.80, volatility_pct: 1.5, avg_trade_size: 5400, instrument: "TECHM.NS EQ" },
+  "BAJAJFINSV.NS": { ltp: 1698.75, bid: 1698.40, ask: 1699.10, volatility_pct: 1.8, avg_trade_size: 4900, instrument: "BAJAJFINSV.NS EQ" },
+  "POWERGRID.NS": { ltp: 324.85, bid: 324.70, ask: 325.00, volatility_pct: 1.1, avg_trade_size: 28000, instrument: "POWERGRID.NS EQ" },
+  "NTPC.NS": { ltp: 356.90, bid: 356.75, ask: 357.05, volatility_pct: 1.3, avg_trade_size: 32000, instrument: "NTPC.NS EQ" },
+  "TATAMOTORS.NS": { ltp: 987.45, bid: 987.10, ask: 987.80, volatility_pct: 2.8, avg_trade_size: 12000, instrument: "TATAMOTORS.NS EQ" },
+  "TATASTEEL.NS": { ltp: 154.60, bid: 154.50, ask: 154.70, volatility_pct: 2.6, avg_trade_size: 45000, instrument: "TATASTEEL.NS EQ" },
+  "ADANIPORTS.NS": { ltp: 1287.35, bid: 1287.00, ask: 1287.70, volatility_pct: 2.3, avg_trade_size: 8900, instrument: "ADANIPORTS.NS EQ" },
+  "ONGC.NS": { ltp: 287.50, bid: 287.35, ask: 287.65, volatility_pct: 1.9, avg_trade_size: 38000, instrument: "ONGC.NS EQ" },
+  "JSWSTEEL.NS": { ltp: 978.25, bid: 977.90, ask: 978.60, volatility_pct: 2.4, avg_trade_size: 11500, instrument: "JSWSTEEL.NS EQ" },
+  "HINDALCO.NS": { ltp: 645.80, bid: 645.50, ask: 646.10, volatility_pct: 2.2, avg_trade_size: 17000, instrument: "HINDALCO.NS EQ" },
+  "INDUSINDBK.NS": { ltp: 1456.90, bid: 1456.50, ask: 1457.30, volatility_pct: 2.0, avg_trade_size: 7800, instrument: "INDUSINDBK.NS EQ" },
+  "COALINDIA.NS": { ltp: 432.75, bid: 432.55, ask: 432.95, volatility_pct: 1.6, avg_trade_size: 22000, instrument: "COALINDIA.NS EQ" },
+  "M&M.NS": { ltp: 2987.60, bid: 2987.10, ask: 2988.10, volatility_pct: 2.1, avg_trade_size: 3800, instrument: "M&M.NS EQ" },
+  "DIVISLAB.NS": { ltp: 5876.40, bid: 5875.50, ask: 5877.30, volatility_pct: 1.5, avg_trade_size: 1650, instrument: "DIVISLAB.NS EQ" },
+  "CIPLA.NS": { ltp: 1465.85, bid: 1465.50, ask: 1466.20, volatility_pct: 1.4, avg_trade_size: 5900, instrument: "CIPLA.NS EQ" },
+  "DRREDDY.NS": { ltp: 1298.70, bid: 1298.30, ask: 1299.10, volatility_pct: 1.6, avg_trade_size: 6400, instrument: "DRREDDY.NS EQ" },
+  "EICHERMOT.NS": { ltp: 4876.25, bid: 4875.50, ask: 4877.00, volatility_pct: 1.8, avg_trade_size: 2100, instrument: "EICHERMOT.NS EQ" },
+  "GRASIM.NS": { ltp: 2654.90, bid: 2654.40, ask: 2655.40, volatility_pct: 1.7, avg_trade_size: 3600, instrument: "GRASIM.NS EQ" },
+  "HEROMOTOCO.NS": { ltp: 4987.35, bid: 4986.50, ask: 4988.20, volatility_pct: 1.6, avg_trade_size: 1900, instrument: "HEROMOTOCO.NS EQ" },
+  "SHREECEM.NS": { ltp: 27654.80, bid: 27652.00, ask: 27657.60, volatility_pct: 1.4, avg_trade_size: 320, instrument: "SHREECEM.NS EQ" },
+  "BRITANNIA.NS": { ltp: 5234.65, bid: 5233.80, ask: 5235.50, volatility_pct: 1.2, avg_trade_size: 1750, instrument: "BRITANNIA.NS EQ" },
+  "APOLLOHOSP.NS": { ltp: 7123.45, bid: 7122.50, ask: 7124.40, volatility_pct: 1.5, avg_trade_size: 1300, instrument: "APOLLOHOSP.NS EQ" },
+  "BAJAJ-AUTO.NS": { ltp: 9876.90, bid: 9875.50, ask: 9878.30, volatility_pct: 1.7, avg_trade_size: 980, instrument: "BAJAJ-AUTO.NS EQ" },
+  "BPCL.NS": { ltp: 312.85, bid: 312.65, ask: 313.05, volatility_pct: 2.0, avg_trade_size: 29000, instrument: "BPCL.NS EQ" },
+  "ADANIENT.NS": { ltp: 2456.70, bid: 2456.20, ask: 2457.20, volatility_pct: 2.9, avg_trade_size: 5200, instrument: "ADANIENT.NS EQ" },
+  "SBILIFE.NS": { ltp: 1587.40, bid: 1587.00, ask: 1587.80, volatility_pct: 1.3, avg_trade_size: 5600, instrument: "SBILIFE.NS EQ" },
+  "HDFCLIFE.NS": { ltp: 687.25, bid: 687.00, ask: 687.50, volatility_pct: 1.4, avg_trade_size: 13500, instrument: "HDFCLIFE.NS EQ" },
+  "TATACONSUM.NS": { ltp: 1087.60, bid: 1087.30, ask: 1087.90, volatility_pct: 1.5, avg_trade_size: 8200, instrument: "TATACONSUM.NS EQ" },
+  "LTIM.NS": { ltp: 6234.85, bid: 6234.00, ask: 6235.70, volatility_pct: 1.6, avg_trade_size: 1450, instrument: "LTIM.NS EQ" },
+  "ADANIGREEN.NS": { ltp: 1876.40, bid: 1875.80, ask: 1877.00, volatility_pct: 3.2, avg_trade_size: 4800, instrument: "ADANIGREEN.NS EQ" },
+  "BANKBARODA.NS": { ltp: 245.80, bid: 245.60, ask: 246.00, volatility_pct: 2.5, avg_trade_size: 35000, instrument: "BANKBARODA.NS EQ" },
+  "BERGEPAINT.NS": { ltp: 487.90, bid: 487.60, ask: 488.20, volatility_pct: 1.8, avg_trade_size: 16000, instrument: "BERGEPAINT.NS EQ" },
+  "DLF.NS": { ltp: 876.45, bid: 876.00, ask: 876.90, volatility_pct: 2.4, avg_trade_size: 10500, instrument: "DLF.NS EQ" },
+  "GODREJCP.NS": { ltp: 1187.65, bid: 1187.20, ask: 1188.10, volatility_pct: 1.7, avg_trade_size: 7200, instrument: "GODREJCP.NS EQ" },
+  "INDIGO.NS": { ltp: 4567.80, bid: 4566.90, ask: 4568.70, volatility_pct: 2.3, avg_trade_size: 2100, instrument: "INDIGO.NS EQ" },
+  "MARICO.NS": { ltp: 634.50, bid: 634.20, ask: 634.80, volatility_pct: 1.4, avg_trade_size: 14000, instrument: "MARICO.NS EQ" },
+  "PIDILITIND.NS": { ltp: 3187.40, bid: 3186.80, ask: 3188.00, volatility_pct: 1.6, avg_trade_size: 2800, instrument: "PIDILITIND.NS EQ" },
+  "SIEMENS.NS": { ltp: 7654.90, bid: 7653.80, ask: 7656.00, volatility_pct: 1.8, avg_trade_size: 1150, instrument: "SIEMENS.NS EQ" },
+  "DABUR.NS": { ltp: 498.75, bid: 498.50, ask: 499.00, volatility_pct: 1.3, avg_trade_size: 17500, instrument: "DABUR.NS EQ" },
+  "HAVELLS.NS": { ltp: 1698.30, bid: 1697.80, ask: 1698.80, volatility_pct: 1.9, avg_trade_size: 5100, instrument: "HAVELLS.NS EQ" },
+  "CHOLAFIN.NS": { ltp: 1354.60, bid: 1354.20, ask: 1355.00, volatility_pct: 2.1, avg_trade_size: 6700, instrument: "CHOLAFIN.NS EQ" },
+  "COLPAL.NS": { ltp: 2987.85, bid: 2987.20, ask: 2988.50, volatility_pct: 1.2, avg_trade_size: 2900, instrument: "COLPAL.NS EQ" },
+  "GAIL.NS": { ltp: 198.45, bid: 198.30, ask: 198.60, volatility_pct: 1.8, avg_trade_size: 42000, instrument: "GAIL.NS EQ" },
+  "IOC.NS": { ltp: 143.70, bid: 143.60, ask: 143.80, volatility_pct: 2.0, avg_trade_size: 58000, instrument: "IOC.NS EQ" },
+  "IRCTC.NS": { ltp: 876.90, bid: 876.40, ask: 877.40, volatility_pct: 2.7, avg_trade_size: 10800, instrument: "IRCTC.NS EQ" },
+  "PFC.NS": { ltp: 487.25, bid: 487.00, ask: 487.50, volatility_pct: 1.9, avg_trade_size: 18500, instrument: "PFC.NS EQ" },
+  "PNB.NS": { ltp: 107.85, bid: 107.75, ask: 107.95, volatility_pct: 2.6, avg_trade_size: 78000, instrument: "PNB.NS EQ" },
+  "ZOMATO.NS": { ltp: 267.80, bid: 267.40, ask: 268.20, volatility_pct: 3.8, avg_trade_size: 32000, instrument: "ZOMATO.NS EQ" },
+  "PAYTM.NS": { ltp: 987.45, bid: 986.80, ask: 988.10, volatility_pct: 4.2, avg_trade_size: 8900, instrument: "PAYTM.NS EQ" },
+  "NYKAA.NS": { ltp: 187.65, bid: 187.30, ask: 188.00, volatility_pct: 3.5, avg_trade_size: 42000, instrument: "NYKAA.NS EQ" },
+  "DELHIVERY.NS": { ltp: 354.80, bid: 354.40, ask: 355.20, volatility_pct: 3.9, avg_trade_size: 24000, instrument: "DELHIVERY.NS EQ" },
+  "POLICYBZR.NS": { ltp: 1876.90, bid: 1876.20, ask: 1877.60, volatility_pct: 3.6, avg_trade_size: 4200, instrument: "POLICYBZR.NS EQ" },
 };
 
 function mockPrefill(input) {
@@ -235,7 +374,7 @@ function CompactField({ label, value, options, hasRun, confidence, rationale, ic
   };
 
   const confColor = confidence === "HIGH" ? "#00d9ff" : confidence === "MEDIUM" ? "#ffaa00" : "#ff4444";
-  const displayVal = currentValue ?? "--";
+  const displayVal = currentValue ?? "";
   const isDisabled = !hasRun || forceDisabled;
   const inputType = type === "number" ? "number" : type === "date" ? "date" : "text";
   const IconComp = icon;
@@ -261,10 +400,27 @@ function CompactField({ label, value, options, hasRun, confidence, rationale, ic
           {options.map(opt => <option key={opt} value={opt}>{opt}</option>)}
         </select>
       ) : (
-        <input type={inputType} value={hasRun ? displayVal : "--"} disabled={isDisabled} onChange={handleChange}
-          onClick={(e) => hasRun && e.target.select()}
-          style={{ background: "#0a0e1a", border: "1px solid #1a2332", borderRadius: "2px", padding: "2px 4px",
-                   color: "#e0e6f0", fontSize: "10px", fontFamily: "monospace", minWidth: 0 }} />
+        <input 
+  type={inputType} 
+  value={
+    hasRun 
+      ? (inputType === "date" && !currentValue ? "" : (currentValue ?? "--")) 
+      : ""
+  } 
+  disabled={isDisabled} 
+  onChange={handleChange}
+  onClick={(e) => hasRun && e.target.select()}
+  style={{ 
+    background: "#0a0e1a", 
+    border: "1px solid #1a2332", 
+    borderRadius: "2px", 
+    padding: "2px 4px",
+    color: "#e0e6f0", 
+    fontSize: "10px", 
+    fontFamily: "monospace", 
+    minWidth: 0 
+  }} 
+/>
       )}
       
       <div style={{ width: "16px", textAlign: "center" }}>
@@ -564,10 +720,10 @@ export default function AUOTerminal() {
           <div style={{ marginTop: "auto", paddingTop: "8px", borderTop: "1px solid #1a2332" }}>
             <div style={{ fontSize: "7px", color: "#7a8599", marginBottom: "4px", textTransform: "uppercase" }}>QUICK PRESETS</div>
             {[
-              { l: "CAS EOD", sym: "RELIANCE.NS", cl: "Client_XYZ", q: "50000", n: "EOD compliance required - must attain position by close", t: 25 },
-              { l: "VWAP AM", sym: "INFY.NS", cl: "Client_ABC", q: "75000", n: "VWAP must complete by 2pm", t: 330 },
-              { l: "URGENT", sym: "HDFCBANK.NS", cl: "Client_GHI", q: "200000", n: "Urgent buy - critical allocation", t: 60 },
-            ].map(pr => (
+  { l: "CAS EOD", sym: "RELIANCE.NS", cl: "GS_NY_001", q: "50000", n: "EOD compliance required - must attain position by close", t: 25 },
+  { l: "VWAP AM", sym: "INFY.NS", cl: "VAN_US_007", q: "75000", n: "VWAP must complete by 2pm", t: 330 },
+  { l: "URGENT", sym: "HDFCBANK.NS", cl: "CITADEL_017", q: "200000", n: "Urgent buy - critical allocation", t: 60 },
+].map(pr => (
               <button key={pr.l} onClick={() => { setSymbol(pr.sym); setCpty(pr.cl); setQty(pr.q); setNotes(pr.n); setTtc(pr.t); setSymbolSearch(""); setDriverOverrides({}); }}
                 style={{ width: "100%", padding: "4px 6px", background: "#0d111a", border: "1px solid #1a2332",
                          borderRadius: "2px", color: "#b0b8c8", fontSize: "8px", cursor: "pointer", textAlign: "left",
