@@ -576,6 +576,45 @@ export default function AUOTerminal() {
   const p = result?.prefilled_params || {};
   const ctx = result?.market_context;
   const getValue = (v) => v?.value ?? "--";
+  const handleSubmit = async () => {
+    if (!result) return;
+    
+    try {
+      const payload = {
+        symbol: symbol,
+        cpty_id: cpty,
+        // Prioritize driver override, fallback to AI suggestion, fallback to null
+        side: driverOverrides["Side"] || result.prefilled_params.side?.value || null,
+        size: +qty,
+        order_notes: notes,
+        prefilled_params: result.prefilled_params,
+        trader_overrides: driverOverrides
+      };
+
+      // Check if we are in API mode
+      if (API_BASE) {
+        const resp = await fetch(`${API_BASE}/api/orders/submit`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(payload)
+        });
+
+        if (!resp.ok) throw new Error(`Server error: ${resp.status}`);
+
+        const data = await resp.json();
+        if (data.status === "submitted") {
+          alert(`✅ Order Placed Successfully!\nOrder ID: ${data.order_id}\nTime: ${data.submission_time}`);
+          resetAll();
+        }
+      } else {
+        // Mock Fallback
+        alert("Mock Submit: Order validated (No API connection)");
+        resetAll();
+      }
+    } catch (e) {
+      alert("❌ Submission failed: " + e.message);
+    }
+  };
 
   return (
     <div style={{ width: "100vw", height: "100vh", background: "#050810", color: "#e0e6f0", fontFamily: "monospace", overflow: "hidden" }}>
@@ -708,13 +747,23 @@ export default function AUOTerminal() {
           </div>
 
           {hasRun && (
-            <button onClick={resetAll}
-              style={{ width: "100%", padding: "5px", background: "transparent", border: "1px solid #1a2332",
-                       borderRadius: "2px", color: "#7a8599", fontSize: "9px", cursor: "pointer", display: "flex",
-                       alignItems: "center", justifyContent: "center", gap: "4px" }}>
-              <RotateCcw size={9} /> RESET
-            </button>
-          )}
+  <div style={{ padding: "8px", background: "#0a0e1a", borderTop: "1px solid #1a2332", display: "flex", gap: "8px" }}>
+    
+    {/* UPDATED SUBMIT BUTTON */}
+    <button onClick={handleSubmit}
+      style={{ flex: 1, padding: "12px", background: "#00d9ff", border: "none", borderRadius: "3px",
+               color: "#000", fontSize: "11px", fontWeight: 700, cursor: "pointer", display: "flex",
+               alignItems: "center", justifyContent: "center", gap: "6px" }}>
+      <Send size={12} /> SUBMIT ORDER
+    </button>
+
+    <button onClick={resetAll}
+      style={{ padding: "12px 20px", background: "transparent", border: "1px solid #1a2332",
+               borderRadius: "3px", color: "#7a8599", fontSize: "10px", cursor: "pointer" }}>
+      CANCEL
+    </button>
+  </div>
+)}
 
           {/* Presets */}
           <div style={{ marginTop: "auto", paddingTop: "8px", borderTop: "1px solid #1a2332" }}>
@@ -821,7 +870,7 @@ export default function AUOTerminal() {
           </div>
 
           {/* Action Bar */}
-          {hasRun && (
+          {/* {hasRun && (
             <div style={{ padding: "8px", background: "#0a0e1a", borderTop: "1px solid #1a2332", display: "flex", gap: "8px" }}>
               <button onClick={() => alert("Order submitted! (mock)")}
                 style={{ flex: 1, padding: "12px", background: "#00d9ff", border: "none", borderRadius: "3px",
@@ -835,7 +884,7 @@ export default function AUOTerminal() {
                 CANCEL
               </button>
             </div>
-          )}
+          )} */}
         </div>
       </div>
     </div>
