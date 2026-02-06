@@ -8,10 +8,7 @@ import {
 } from "lucide-react";
 
 // ─── API CONFIG ─────────────────────────────────────────────────
-// Toggle between mock (null) and real backend:
-//   null           → uses built-in mockPrefill (no server needed)
-//   "http://localhost:8000" → uses FastAPI backend
-const API_BASE = "http://localhost:8000";
+const API_BASE = "http://localhost:8000"; // Toggle: null for mock, "http://localhost:8000" for real
 
 // ─── MOCK BACKEND ───────────────────────────────────────────────
 const MOCK_CLIENTS = [
@@ -43,7 +40,6 @@ function mockPrefill(input) {
   const client = MOCK_CLIENTS.find(c => c.cpty_id === input.cpty_id) || MOCK_CLIENTS[0];
   const notes = (input.order_notes || "").toLowerCase();
 
-  // Urgency calculation
   const ttc = input.time_to_close ?? 25;
   const timeScore = ttc <= 25 ? 40 : (1 - ttc / 390) * 40;
   const sizeRatio = input.size / market.avg_trade_size;
@@ -57,8 +53,6 @@ function mockPrefill(input) {
   const urgencyScore = Math.round(Math.max(0, Math.min(100, timeScore + sizeScore + clientScore + notesScore)));
   const classification = urgencyScore >= 80 ? "CRITICAL" : urgencyScore >= 60 ? "HIGH" : urgencyScore >= 40 ? "MEDIUM" : "LOW";
 
-  // Side detection
-  // Side: honor user override, else detect from notes
   let side = input.side || null;
   let sideConf = "LOW", sideRat = "Require manual selection";
   if (side) {
@@ -69,13 +63,11 @@ function mockPrefill(input) {
     side = "Sell"; sideConf = "HIGH"; sideRat = "Order notes indicate sell instruction";
   }
 
-  // CAS detection
   const casActive = ttc <= 25;
   const refPrice = market.ltp;
   const upperBand = +(refPrice * 1.03).toFixed(1);
   const lowerBand = +(refPrice * 0.97).toFixed(1);
 
-  // Order type
   let orderType, orderTypeRat;
   if (casActive) {
     orderType = "Limit"; orderTypeRat = "CAS window detected. Limit order required for auction participation within ±3% band.";
@@ -85,7 +77,6 @@ function mockPrefill(input) {
     orderType = "Limit"; orderTypeRat = "Standard limit order for price protection";
   }
 
-  // Limit price
   let limitPrice, limitRat;
   if (casActive) {
     const mult = urgencyScore > 80 ? (side === "Sell" ? 0.992 : 1.008) : (side === "Sell" ? 0.995 : 1.005);
@@ -100,13 +91,11 @@ function mockPrefill(input) {
     else { limitPrice = side === "Sell" ? +(market.ask - 0.1).toFixed(1) : +(market.bid + 0.1).toFixed(1); limitRat = "Low urgency: Patient limit for better price"; }
   }
 
-  // TIF
   let tif, tifRat;
   if (casActive) { tif = "CAS"; tifRat = "CAS session: Order valid only for closing auction window"; }
   else if (urgencyScore > 90 && notes.includes("immediate")) { tif = "IOC"; tifRat = "Critical urgency: IOC ensures immediate execution attempt"; }
   else { tif = "GFD"; tifRat = "Standard day order: Valid until market close"; }
 
-  // Algo selection
   let useAlgo = false, executor = null, executorRat = "";
   if (casActive) {
     executorRat = "CAS window: Direct limit order to closing auction (no algo needed)";
@@ -120,7 +109,6 @@ function mockPrefill(input) {
     useAlgo = true; executor = "VWAP"; executorRat = "Standard VWAP execution balances cost and completion";
   }
 
-  // VWAP params
   const pricing = urgencyScore > 70 ? "Adaptive" : market.volatility_pct > 2.5 ? "Passive" : "Adaptive";
   const pricingRat = urgencyScore > 70 ? "High urgency: Adaptive pricing crosses spread when necessary" : "Standard adaptive pricing balances aggression and patience";
   const urgSetting = urgencyScore > 80 ? "High" : urgencyScore > 50 ? "Auto" : "Low";
@@ -129,17 +117,14 @@ function mockPrefill(input) {
   const closePrint = ttc < 60;
   const closePct = closePrint ? (urgencyScore > 80 ? 30 : 20) : 0;
 
-  // Crossing
   const crossEnabled = sizeRatio > 5;
   const minCross = crossEnabled ? Math.round(input.size * 0.2) : null;
   const maxCross = crossEnabled ? Math.round(input.size * 0.5) : null;
 
-  // IWould
   const iwEnabled = urgencyScore < 40;
   const iwPrice = iwEnabled ? +(market.ltp * (side === "Sell" ? 1.005 : 0.995)).toFixed(1) : null;
   const iwQty = iwEnabled ? Math.round(input.size * 0.3) : null;
 
-  // Limit adjustment
   const limOption = urgencyScore >= 80 ? (side === "Buy" ? "Primary Best Bid" : "Primary Best Ask") : "Order Limit";
   const limOffset = urgencyScore >= 80 ? 1 : 0;
 
@@ -171,7 +156,6 @@ function mockPrefill(input) {
         service: { value: useAlgo ? "BlueBox 2" : "Market", confidence: "HIGH", rationale: useAlgo ? "Algo engine" : "Direct market execution" },
         executor: { value: executor, confidence: useAlgo ? "HIGH" : "HIGH", rationale: executorRat },
         use_algo: useAlgo,
-        // VWAP
         pricing: { value: pricing, confidence: "HIGH", rationale: pricingRat },
         layering: { value: "Auto", confidence: "HIGH", rationale: "Auto-layering optimizes order book placement dynamically" },
         urgency_setting: { value: urgSetting, confidence: "HIGH", rationale: `Urgency score: ${urgencyScore}/100 → ${urgSetting}` },
@@ -180,15 +164,12 @@ function mockPrefill(input) {
         opening_pct: { value: openPrint ? 10 : 0, confidence: "MEDIUM", rationale: "Max % in opening auction" },
         closing_print: { value: closePrint ? "True" : "False", confidence: "HIGH", rationale: closePrint ? "Approaching close - participate in closing auction" : "Sufficient time remaining" },
         closing_pct: { value: closePct, confidence: "MEDIUM", rationale: `Max ${closePct}% in closing auction` },
-        // Crossing
         min_cross_qty: { value: minCross, confidence: "MEDIUM", rationale: crossEnabled ? "Large order: Enable crossing for 20% blocks" : "Not applicable" },
         max_cross_qty: { value: maxCross, confidence: "MEDIUM", rationale: crossEnabled ? "Large order: Enable crossing for 50% blocks" : "Not applicable" },
         cross_qty_unit: { value: "Shares", confidence: "HIGH", rationale: "Standard unit" },
         leave_active_slice: { value: "False", confidence: "HIGH", rationale: "Avoid over-execution during cross" },
-        // IWould
         iwould_price: { value: iwPrice, confidence: "MEDIUM", rationale: iwEnabled ? "Opportunistic execution price" : "Not applicable for urgent orders" },
         iwould_qty: { value: iwQty, confidence: "MEDIUM", rationale: iwEnabled ? "30% of total order" : "Not applicable" },
-        // Limit Adjustment
         limit_option: { value: limOption, confidence: urgencyScore >= 80 ? "MEDIUM" : "HIGH", rationale: urgencyScore >= 80 ? "Peg to best price for aggressive fill" : "Static limit price from order" },
         limit_offset: { value: limOffset, confidence: "HIGH", rationale: limOffset ? `${limOffset} tick offset` : "No offset" },
         offset_unit: { value: "Tick", confidence: "HIGH", rationale: "Standard tick-based offset" },
@@ -214,14 +195,10 @@ function mockPrefill(input) {
   });
 }
 
-// ─── DRIVER vs PASSENGER FIELDS ─────────────────────────────────
-// Driver fields on the RIGHT side: editing these triggers full recalc
-// because they affect downstream calculations (e.g., Side → Limit Price).
-// All other right-side fields are Passengers — they accept new server values.
 const DRIVER_FIELDS = new Set(["Side"]);
 
-// ─── SMART FIELD COMPONENT ──────────────────────────────────────
-function SmartField({ label, value, options, hasRun, confidence, rationale, icon, type, disabled: forceDisabled, onDriverChange, recalcGeneration }) {
+// ─── COMPACT FIELD ──────────────────────────────────────────────
+function CompactField({ label, value, options, hasRun, confidence, rationale, icon, type, disabled: forceDisabled, onDriverChange, recalcGeneration }) {
   const [isEdited, setIsEdited] = useState(false);
   const [currentValue, setCurrentValue] = useState(value);
   const [showTip, setShowTip] = useState(false);
@@ -230,9 +207,8 @@ function SmartField({ label, value, options, hasRun, confidence, rationale, icon
   const prevValueRef = useRef(value);
   const isDriver = DRIVER_FIELDS.has(label);
 
-  // On recalc: Passengers accept new value & flash if changed; Drivers keep trader edit
   useEffect(() => {
-    if (isDriver && isEdited) return; // keep trader override
+    if (isDriver && isEdited) return;
     const changed = prevValueRef.current !== value;
     setCurrentValue(value);
     setIsEdited(false);
@@ -258,227 +234,131 @@ function SmartField({ label, value, options, hasRun, confidence, rationale, icon
     if (isDriver && onDriverChange) onDriverChange(label, newVal);
   };
 
-  const confColor = confidence === "HIGH" ? "var(--conf-high)" : confidence === "MEDIUM" ? "var(--conf-med)" : "var(--conf-low)";
+  const confColor = confidence === "HIGH" ? "#00d9ff" : confidence === "MEDIUM" ? "#ffaa00" : "#ff4444";
   const displayVal = currentValue ?? "--";
   const isDisabled = !hasRun || forceDisabled;
   const inputType = type === "number" ? "number" : type === "date" ? "date" : "text";
   const IconComp = icon;
 
   return (
-    React.createElement("div", {
-      style: {
-        display: "flex", alignItems: "center", gap: "8px", padding: "6px 10px",
-        borderRadius: "6px", transition: "all 0.3s",
-        background: flash ? "rgba(91,138,245,0.12)" : isEdited ? "rgba(255,170,50,0.06)" : hasRun ? "transparent" : "rgba(255,255,255,0.02)",
-        opacity: hasRun ? 1 : 0.4, borderLeft: isDriver && isEdited ? "2px solid var(--accent)" : isEdited ? "2px solid var(--conf-med)" : flash ? "2px solid var(--accent)" : "2px solid transparent",
-        minHeight: "36px"
-      }
-    },
-      IconComp && React.createElement(IconComp, { size: 14, style: { color: "var(--text-dim)", flexShrink: 0 } }),
-      React.createElement("span", {
-        style: { width: "110px", flexShrink: 0, fontSize: "12px", color: "var(--text-dim)", fontFamily: "var(--font-mono)", letterSpacing: "0.02em" }
-      }, label),
-      options
-        ? React.createElement("select", {
-            value: hasRun ? (currentValue || "") : "",
-            disabled: isDisabled,
-            onChange: handleChange,
-            style: {
-              flex: 1, background: "var(--input-bg)", border: "1px solid var(--border)",
-              borderRadius: "4px", padding: "4px 8px", color: "var(--text-main)", fontSize: "13px",
-              fontFamily: "var(--font-mono)", cursor: isDisabled ? "default" : "pointer",
-              outline: "none", minWidth: 0
-            }
-          },
-            React.createElement("option", { value: "", disabled: true }, "--"),
-            options.map(opt => React.createElement("option", { key: opt, value: opt }, opt))
-          )
-        : React.createElement("input", {
-            type: inputType,
-            value: hasRun ? displayVal : "--",
-            disabled: isDisabled,
-            onChange: handleChange,
-            onClick: (e) => hasRun && e.target.select(),
-            style: {
-              flex: 1, background: "var(--input-bg)", border: "1px solid var(--border)",
-              borderRadius: "4px", padding: "4px 8px", color: "var(--text-main)", fontSize: "13px",
-              fontFamily: "var(--font-mono)", outline: "none", minWidth: 0
-            }
-          }),
-      hasRun && React.createElement("span", {
-        style: { fontSize: "13px", width: "20px", textAlign: "center", flexShrink: 0 }
-      }, isEdited
-        ? (isDriver ? React.createElement(RefreshCw, { size: 13, style: { color: "var(--accent)" } }) : React.createElement(Pencil, { size: 13, style: { color: "var(--conf-med)" } }))
-        : React.createElement(Check, { size: 13, style: { color: confColor } })
-      ),
-      hasRun && rationale && React.createElement("div", {
-        ref: tipRef,
-        style: { position: "relative", flexShrink: 0 }
-      },
-        React.createElement("button", {
-          onClick: () => setShowTip(!showTip),
-          style: {
-            background: "none", border: "none", cursor: "pointer", padding: "2px",
-            color: "var(--text-dim)", display: "flex", alignItems: "center"
-          }
-        }, React.createElement(Info, { size: 13 })),
-        showTip && React.createElement("div", {
-          style: {
-            position: "absolute", right: 0, top: "100%", marginTop: "4px",
-            background: "var(--surface-2)", border: "1px solid var(--border)",
-            borderRadius: "6px", padding: "8px 12px", fontSize: "11px",
-            color: "var(--text-sub)", width: "240px", zIndex: 100,
-            boxShadow: "0 8px 24px rgba(0,0,0,0.4)", lineHeight: 1.5,
-            fontFamily: "var(--font-body)"
-          }
-        },
-          React.createElement("div", {
-            style: { fontSize: "9px", textTransform: "uppercase", letterSpacing: "0.08em", color: confColor, marginBottom: "4px", fontWeight: 600 }
-          }, `${confidence} CONFIDENCE`),
-          isDriver && React.createElement("div", {
-            style: { fontSize: "9px", color: "var(--accent)", marginBottom: "4px", fontWeight: 600 }
-          }, "⚡ DRIVER — editing recalculates all parameters"),
-          rationale
-        )
-      )
-    )
+    <div style={{
+      display: "grid", gridTemplateColumns: "100px 1fr 16px 16px", alignItems: "center", gap: "6px",
+      padding: "3px 6px", borderRadius: "2px", transition: "all 0.3s",
+      background: flash ? "rgba(0,217,255,0.08)" : isEdited ? "rgba(255,170,0,0.05)" : "transparent",
+      borderLeft: isDriver && isEdited ? "2px solid #00d9ff" : isEdited ? "2px solid #ffaa00" : flash ? "2px solid #00d9ff" : "2px solid transparent",
+      minHeight: "24px", fontSize: "10px", opacity: hasRun ? 1 : 0.4
+    }}>
+      <div style={{ display: "flex", alignItems: "center", gap: "4px", color: "#7a8599", fontFamily: "monospace", fontSize: "9px" }}>
+        {IconComp && <IconComp size={10} />}
+        <span>{label}</span>
+      </div>
+      
+      {options ? (
+        <select value={hasRun ? (currentValue || "") : ""} disabled={isDisabled} onChange={handleChange}
+          style={{ background: "#0a0e1a", border: "1px solid #1a2332", borderRadius: "2px", padding: "2px 4px",
+                   color: "#e0e6f0", fontSize: "10px", fontFamily: "monospace", cursor: isDisabled ? "default" : "pointer" }}>
+          <option value="" disabled>--</option>
+          {options.map(opt => <option key={opt} value={opt}>{opt}</option>)}
+        </select>
+      ) : (
+        <input type={inputType} value={hasRun ? displayVal : "--"} disabled={isDisabled} onChange={handleChange}
+          onClick={(e) => hasRun && e.target.select()}
+          style={{ background: "#0a0e1a", border: "1px solid #1a2332", borderRadius: "2px", padding: "2px 4px",
+                   color: "#e0e6f0", fontSize: "10px", fontFamily: "monospace", minWidth: 0 }} />
+      )}
+      
+      <div style={{ width: "16px", textAlign: "center" }}>
+        {hasRun && (isEdited ? (isDriver ? <RefreshCw size={10} color="#00d9ff" /> : <Pencil size={10} color="#ffaa00" />) : <Check size={10} color={confColor} />)}
+      </div>
+      
+      {hasRun && rationale && (
+        <div ref={tipRef} style={{ position: "relative" }}>
+          <button onClick={() => setShowTip(!showTip)}
+            style={{ background: "none", border: "none", cursor: "pointer", padding: 0, color: "#7a8599", display: "flex" }}>
+            <Info size={10} />
+          </button>
+          {showTip && (
+            <div style={{ position: "absolute", right: 0, top: "100%", marginTop: "4px", background: "#12161f",
+                          border: "1px solid #1a2332", borderRadius: "4px", padding: "6px 8px", fontSize: "9px",
+                          color: "#b0b8c8", width: "220px", zIndex: 100, boxShadow: "0 4px 12px rgba(0,0,0,0.6)", lineHeight: 1.4 }}>
+              <div style={{ fontSize: "8px", textTransform: "uppercase", letterSpacing: "0.05em", color: confColor, marginBottom: "3px", fontWeight: 600 }}>
+                {confidence} CONFIDENCE
+              </div>
+              {isDriver && <div style={{ fontSize: "8px", color: "#00d9ff", marginBottom: "3px", fontWeight: 600 }}>⚡ DRIVER FIELD</div>}
+              {rationale}
+            </div>
+          )}
+        </div>
+      )}
+    </div>
   );
 }
 
-// ─── SECTION HEADER ─────────────────────────────────────────────
-function SectionHeader({ icon, title, subtitle, tag }) {
+// ─── PANEL HEADER ───────────────────────────────────────────────
+function PanelHeader({ title, icon, tag }) {
   const IconComp = icon;
-  return React.createElement("div", {
-    style: {
-      display: "flex", alignItems: "center", gap: "8px", padding: "10px 12px",
-      borderBottom: "1px solid var(--border)", marginBottom: "4px"
-    }
-  },
-    React.createElement(IconComp, { size: 15, style: { color: "var(--accent)" } }),
-    React.createElement("span", { style: { fontSize: "12px", fontWeight: 600, color: "var(--text-main)", textTransform: "uppercase", letterSpacing: "0.06em" } }, title),
-    subtitle && React.createElement("span", { style: { fontSize: "11px", color: "var(--text-dim)", marginLeft: "auto" } }, subtitle),
-    tag && React.createElement("span", {
-      style: {
-        fontSize: "9px", padding: "2px 8px", borderRadius: "3px",
-        background: tag === "CAS" ? "rgba(255,80,80,0.15)" : "rgba(80,200,120,0.12)",
-        color: tag === "CAS" ? "#ff6b6b" : "#50c878", fontWeight: 600, letterSpacing: "0.05em"
-      }
-    }, tag)
+  return (
+    <div style={{ display: "flex", alignItems: "center", gap: "6px", padding: "4px 6px", background: "#0d111a",
+                  borderBottom: "1px solid #1a2332", fontSize: "9px", fontWeight: 600, color: "#00d9ff",
+                  textTransform: "uppercase", letterSpacing: "0.05em" }}>
+      <IconComp size={11} />
+      <span>{title}</span>
+      {tag && <span style={{ marginLeft: "auto", padding: "1px 5px", background: tag === "CAS" ? "rgba(255,68,68,0.2)" : "rgba(0,217,255,0.2)",
+                              color: tag === "CAS" ? "#ff4444" : "#00d9ff", borderRadius: "2px", fontSize: "8px" }}>{tag}</span>}
+    </div>
   );
 }
 
-// ─── URGENCY GAUGE ──────────────────────────────────────────────
-function UrgencyGauge({ score, classification, breakdown }) {
-  const color = classification === "CRITICAL" ? "#ff4757" : classification === "HIGH" ? "#ff8c42" : classification === "MEDIUM" ? "#ffd93d" : "#6bdb6b";
-  const barWidth = `${score}%`;
-  return React.createElement("div", {
-    style: { padding: "12px 16px", background: "var(--surface-1)", borderRadius: "8px", border: "1px solid var(--border)" }
-  },
-    React.createElement("div", { style: { display: "flex", justifyContent: "space-between", alignItems: "baseline", marginBottom: "8px" } },
-      React.createElement("div", { style: { display: "flex", alignItems: "center", gap: "8px" } },
-        React.createElement(Gauge, { size: 16, style: { color } }),
-        React.createElement("span", { style: { fontSize: "13px", fontWeight: 600, color: "var(--text-main)" } }, "Urgency Score"),
-      ),
-      React.createElement("div", { style: { display: "flex", alignItems: "baseline", gap: "6px" } },
-        React.createElement("span", { style: { fontSize: "24px", fontWeight: 700, color, fontFamily: "var(--font-mono)" } }, score),
-        React.createElement("span", { style: { fontSize: "11px", color: "var(--text-dim)" } }, "/ 100"),
-        React.createElement("span", {
-          style: {
-            fontSize: "10px", padding: "2px 8px", borderRadius: "3px", marginLeft: "4px",
-            background: `${color}22`, color, fontWeight: 700, letterSpacing: "0.05em"
-          }
-        }, classification)
-      )
-    ),
-    React.createElement("div", {
-      style: { height: "4px", background: "var(--surface-2)", borderRadius: "2px", overflow: "hidden", marginBottom: "10px" }
-    },
-      React.createElement("div", {
-        style: { height: "100%", width: barWidth, background: `linear-gradient(90deg, ${color}88, ${color})`, borderRadius: "2px", transition: "width 0.8s ease" }
-      })
-    ),
-    breakdown && React.createElement("div", {
-      style: { display: "grid", gridTemplateColumns: "1fr 1fr 1fr 1fr", gap: "6px" }
-    },
-      [
-        { label: "Time", val: breakdown.time_pressure, max: 40 },
-        { label: "Size", val: breakdown.size_pressure, max: 30 },
-        { label: "Client", val: breakdown.client_factor, max: 20 },
-        { label: "Notes", val: breakdown.notes_urgency, max: 10 },
-      ].map(b =>
-        React.createElement("div", { key: b.label, style: { textAlign: "center" } },
-          React.createElement("div", { style: { fontSize: "9px", color: "var(--text-dim)", textTransform: "uppercase", letterSpacing: "0.05em", marginBottom: "2px" } }, b.label),
-          React.createElement("div", { style: { fontSize: "13px", fontFamily: "var(--font-mono)", fontWeight: 600, color: "var(--text-sub)" } }, `${b.val}/${b.max}`),
-        )
-      )
-    )
+// ─── URGENCY STRIP ──────────────────────────────────────────────
+function UrgencyStrip({ score, classification, breakdown }) {
+  const color = classification === "CRITICAL" ? "#ff4444" : classification === "HIGH" ? "#ff8800" : classification === "MEDIUM" ? "#ffaa00" : "#00d966";
+  return (
+    <div style={{ display: "flex", alignItems: "center", gap: "8px", padding: "4px 8px", background: "#0d111a",
+                  border: "1px solid #1a2332", borderRadius: "3px", fontSize: "10px" }}>
+      <Gauge size={12} style={{ color }} />
+      <span style={{ color: "#7a8599", fontFamily: "monospace", fontSize: "9px" }}>URGENCY</span>
+      <span style={{ fontSize: "16px", fontWeight: 700, color, fontFamily: "monospace" }}>{score}</span>
+      <span style={{ fontSize: "8px", color: "#7a8599" }}>/100</span>
+      <span style={{ padding: "2px 6px", background: `${color}22`, color, borderRadius: "2px", fontSize: "8px", fontWeight: 700 }}>{classification}</span>
+      <div style={{ marginLeft: "auto", display: "flex", gap: "8px", fontSize: "9px", fontFamily: "monospace", color: "#7a8599" }}>
+        <span>T:{breakdown.time_pressure.toFixed(1)}</span>
+        <span>S:{breakdown.size_pressure.toFixed(1)}</span>
+        <span>C:{breakdown.client_factor.toFixed(1)}</span>
+        <span>N:{breakdown.notes_urgency}</span>
+      </div>
+    </div>
   );
 }
 
-// ─── MARKET CONTEXT BAR ─────────────────────────────────────────
-function MarketBar({ ctx }) {
+// ─── MARKET STRIP ───────────────────────────────────────────────
+function MarketStrip({ ctx }) {
   if (!ctx) return null;
-  const stateColors = { CAS: "#ff4757", Pre_Close: "#ff8c42", Continuous: "#50c878" };
+  const stateColors = { CAS: "#ff4444", Pre_Close: "#ff8800", Continuous: "#00d966" };
   const col = stateColors[ctx.market_state] || "#888";
-  return React.createElement("div", {
-    style: {
-      display: "flex", flexWrap: "wrap", gap: "12px", padding: "10px 14px",
-      background: "var(--surface-1)", borderRadius: "8px", border: "1px solid var(--border)",
-      fontSize: "12px", fontFamily: "var(--font-mono)", alignItems: "center"
-    }
-  },
-    React.createElement("span", { style: { display: "flex", alignItems: "center", gap: "4px" } },
-      React.createElement(CircleDot, { size: 10, style: { color: col } }),
-      React.createElement("span", { style: { color: col, fontWeight: 700 } }, ctx.market_state)
-    ),
-    ctx.cas_active && React.createElement("span", {
-      style: { padding: "2px 8px", background: "rgba(255,71,87,0.12)", color: "#ff4757", borderRadius: "3px", fontSize: "10px", fontWeight: 700 }
-    }, `CAS ACTIVE · ${ctx.time_to_close}min`),
-    React.createElement("span", { style: { color: "var(--text-dim)" } }, `LTP ₹${ctx.ltp}`),
-    React.createElement("span", { style: { color: "var(--text-dim)" } }, `Bid ₹${ctx.bid}`),
-    React.createElement("span", { style: { color: "var(--text-dim)" } }, `Ask ₹${ctx.ask}`),
-    React.createElement("span", { style: { color: "var(--text-dim)" } }, `Spread ${ctx.spread_bps}bps`),
-    React.createElement("span", { style: { color: "var(--text-dim)" } }, `Vol ${ctx.volatility}%`),
-    ctx.cas_active && React.createElement("span", { style: { color: "#ff8c42", fontSize: "11px" } }, `Band: ₹${ctx.cas_lower_band} – ₹${ctx.cas_upper_band}`),
-  );
-}
-
-// ─── TIME SLIDER ────────────────────────────────────────────────
-function TimeSlider({ value, onChange }) {
-  const markers = [
-    { val: 330, label: "9:30 AM" }, { val: 240, label: "11 AM" },
-    { val: 150, label: "1 PM" }, { val: 60, label: "2:30 PM" },
-    { val: 25, label: "3:05 PM" }, { val: 10, label: "3:20 PM" },
-  ];
-  const isCAS = value <= 25;
-  return React.createElement("div", { style: { marginBottom: "2px" } },
-    React.createElement("div", {
-      style: { display: "flex", justifyContent: "space-between", alignItems: "baseline", marginBottom: "6px" }
-    },
-      React.createElement("label", { style: { fontSize: "12px", color: "var(--text-dim)", fontFamily: "var(--font-mono)" } },
-        React.createElement(Timer, { size: 12, style: { marginRight: "4px", verticalAlign: "middle" } }),
-        "Time to Close"
-      ),
-      React.createElement("span", {
-        style: {
-          fontFamily: "var(--font-mono)", fontSize: "13px", fontWeight: 700,
-          color: isCAS ? "#ff4757" : value <= 60 ? "#ff8c42" : "var(--text-main)"
-        }
-      }, `${value} min`, isCAS && " (CAS)")
-    ),
-    React.createElement("input", {
-      type: "range", min: 5, max: 380, value,
-      onChange: (e) => onChange(+e.target.value),
-      style: { width: "100%", accentColor: isCAS ? "#ff4757" : "var(--accent)" }
-    }),
-    React.createElement("div", {
-      style: { display: "flex", justifyContent: "space-between", fontSize: "9px", color: "var(--text-dim)", marginTop: "2px" }
-    }, markers.map(m => React.createElement("span", { key: m.val }, m.label)))
+  return (
+    <div style={{ display: "flex", alignItems: "center", gap: "10px", padding: "4px 8px", background: "#0d111a",
+                  border: "1px solid #1a2332", borderRadius: "3px", fontSize: "9px", fontFamily: "monospace" }}>
+      <div style={{ display: "flex", alignItems: "center", gap: "4px" }}>
+        <CircleDot size={8} style={{ color: col }} />
+        <span style={{ color: col, fontWeight: 700 }}>{ctx.market_state}</span>
+      </div>
+      {ctx.cas_active && <span style={{ padding: "1px 5px", background: "rgba(255,68,68,0.2)", color: "#ff4444", borderRadius: "2px", fontSize: "8px", fontWeight: 700 }}>
+        CAS {ctx.time_to_close}m
+      </span>}
+      <span style={{ color: "#7a8599" }}>LTP ₹{ctx.ltp}</span>
+      <span style={{ color: "#7a8599" }}>BID ₹{ctx.bid}</span>
+      <span style={{ color: "#7a8599" }}>ASK ₹{ctx.ask}</span>
+      <span style={{ color: "#7a8599" }}>SPR {ctx.spread_bps}bp</span>
+      <span style={{ color: "#7a8599" }}>VOL {ctx.volatility}%</span>
+      {ctx.cas_active && <span style={{ color: "#ff8800", fontSize: "8px", marginLeft: "auto" }}>
+        BAND: ₹{ctx.cas_lower_band} - ₹{ctx.cas_upper_band}
+      </span>}
+    </div>
   );
 }
 
 // ─── MAIN APP ───────────────────────────────────────────────────
-export default function AUOSmartTicket() {
+export default function AUOTerminal() {
   const [symbol, setSymbol] = useState("");
   const [cpty, setCpty] = useState("");
   const [qty, setQty] = useState("");
@@ -489,18 +369,14 @@ export default function AUOSmartTicket() {
   const [hasRun, setHasRun] = useState(false);
   const [symbolSearch, setSymbolSearch] = useState("");
   const [showSymbols, setShowSymbols] = useState(false);
-
-  // Right-side driver overrides (e.g., Side) — trigger recalc when changed
   const [driverOverrides, setDriverOverrides] = useState({});
   const [recalcGen, setRecalcGen] = useState(0);
   const [recalcCount, setRecalcCount] = useState(0);
 
   const filteredSymbols = MOCK_SYMBOLS.filter(s => s.toLowerCase().includes(symbolSearch.toLowerCase()));
   const debounceRef = useRef(null);
-
   const allFilled = !!(symbol && cpty && qty);
 
-  // Callback for right-side Driver fields
   const handleDriverChange = useCallback((fieldLabel, newValue) => {
     setDriverOverrides(prev => ({ ...prev, [fieldLabel]: newValue }));
   }, []);
@@ -509,45 +385,30 @@ export default function AUOSmartTicket() {
 
   useEffect(() => {
     if (!allFilled) {
-      setResult(null);
-      setHasRun(false);
-      setLoading(false);
+      setResult(null); setHasRun(false); setLoading(false);
       return;
     }
-
-    // Debounce to avoid hammering on rapid typing (300ms)
     setLoading(true);
     if (debounceRef.current) clearTimeout(debounceRef.current);
     debounceRef.current = setTimeout(async () => {
       try {
-        const inputData = {
-          symbol, cpty_id: cpty, size: +qty, order_notes: notes, time_to_close: ttc,
-          side: driverOverrides["Side"] || null,
-        };
-
+        const inputData = { symbol, cpty_id: cpty, size: +qty, order_notes: notes, time_to_close: ttc, side: driverOverrides["Side"] || null };
         let res;
         if (API_BASE) {
           const resp = await fetch(`${API_BASE}/api/prefill`, {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify(inputData),
+            method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(inputData)
           });
           if (!resp.ok) throw new Error(`API error ${resp.status}`);
           res = await resp.json();
         } else {
           res = await mockPrefill(inputData);
         }
-
-        setResult(res);
-        setHasRun(true);
-        setRecalcGen(g => g + 1);
-        setRecalcCount(c => c + 1);
+        setResult(res); setHasRun(true); setRecalcGen(g => g + 1); setRecalcCount(c => c + 1);
       } catch (err) {
         console.error("AUO prefill error:", err);
       }
       setLoading(false);
     }, 400);
-
     return () => { if (debounceRef.current) clearTimeout(debounceRef.current); };
   }, [symbol, cpty, qty, notes, ttc, allFilled, overridesKey]);
 
@@ -560,345 +421,267 @@ export default function AUOSmartTicket() {
   const ctx = result?.market_context;
   const getValue = (v) => v?.value ?? "--";
 
-  return React.createElement("div", { style: { minHeight: "100vh", background: "var(--bg)", color: "var(--text-main)", fontFamily: "var(--font-body)" } },
-    React.createElement("style", null, `
-      :root {
-        --bg: #0c0e14;
-        --surface-1: #12151e;
-        --surface-2: #1a1e2a;
-        --border: #252a38;
-        --input-bg: #161a26;
-        --text-main: #e2e4ea;
-        --text-sub: #b0b4c0;
-        --text-dim: #6b7084;
-        --accent: #5b8af5;
-        --accent-dim: #3d5fa8;
-        --conf-high: #50c878;
-        --conf-med: #ffa832;
-        --conf-low: #ff5555;
-        --font-body: 'Segoe UI', system-ui, sans-serif;
-        --font-mono: 'SF Mono', 'Cascadia Code', 'Consolas', monospace;
-      }
-      * { box-sizing: border-box; margin: 0; padding: 0; }
-      input, select, textarea, button { font-family: inherit; }
-      input:focus, select:focus, textarea:focus { outline: 1px solid var(--accent); border-color: var(--accent) !important; }
-      select { appearance: auto; }
-      input[type="range"] { height: 4px; }
-      ::selection { background: var(--accent); color: white; }
-      ::-webkit-scrollbar { width: 6px; }
-      ::-webkit-scrollbar-track { background: var(--surface-1); }
-      ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
-      @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.5; } }
-      .loading-pulse { animation: pulse 1.2s ease-in-out infinite; }
-    `),
+  return (
+    <div style={{ width: "100vw", height: "100vh", background: "#050810", color: "#e0e6f0", fontFamily: "monospace", overflow: "hidden" }}>
+      <style>{`
+        :root { --bg: #050810; --surface: #0a0e1a; --border: #1a2332; --accent: #00d9ff; --text: #e0e6f0; --dim: #7a8599; }
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        input, select, textarea, button { font-family: monospace; }
+        input:focus, select:focus, textarea:focus { outline: 1px solid #00d9ff; border-color: #00d9ff !important; }
+        ::selection { background: #00d9ff; color: #000; }
+        ::-webkit-scrollbar { width: 6px; height: 6px; }
+        ::-webkit-scrollbar-track { background: #0a0e1a; }
+        ::-webkit-scrollbar-thumb { background: #1a2332; border-radius: 3px; }
+        @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.5; } }
+        .pulse { animation: pulse 1.2s ease-in-out infinite; }
+      `}</style>
 
-    // HEADER
-    React.createElement("div", {
-      style: {
-        padding: "14px 24px", borderBottom: "1px solid var(--border)",
-        display: "flex", justifyContent: "space-between", alignItems: "center",
-        background: "var(--surface-1)"
-      }
-    },
-      React.createElement("div", { style: { display: "flex", alignItems: "center", gap: "10px" } },
-        React.createElement(Zap, { size: 18, style: { color: "var(--accent)" } }),
-        React.createElement("span", { style: { fontSize: "15px", fontWeight: 700, letterSpacing: "0.04em" } }, "AUO"),
-        React.createElement("span", { style: { fontSize: "11px", color: "var(--text-dim)", fontFamily: "var(--font-mono)" } }, "Adaptive Urgency Orchestrator"),
-      ),
-      React.createElement("div", { style: { display: "flex", alignItems: "center", gap: "12px" } },
-        result && React.createElement("span", {
-          style: { fontSize: "10px", color: "var(--text-dim)", fontFamily: "var(--font-mono)" }
-        }, `v${result.metadata.auo_version} · ${result.metadata.processing_time_ms}ms · conf ${result.metadata.confidence_score}`),
-        recalcCount > 1 && React.createElement("span", {
-          style: { fontSize: "10px", padding: "3px 8px", background: "rgba(91,138,245,0.12)", borderRadius: "4px", color: "var(--accent)", fontFamily: "var(--font-mono)" }
-        }, `${recalcCount} recalcs`),
-        React.createElement("span", {
-          style: { fontSize: "10px", padding: "3px 8px", background: "var(--surface-2)", borderRadius: "4px", color: "var(--text-dim)", fontFamily: "var(--font-mono)" }
-        }, API_BASE ? "⚡ API MODE" : "🧪 MOCK MODE")
-      )
-    ),
+      {/* HEADER BAR */}
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "6px 12px",
+                    background: "#0a0e1a", borderBottom: "1px solid #1a2332" }}>
+        <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+          <Zap size={14} style={{ color: "#00d9ff" }} />
+          <span style={{ fontSize: "11px", fontWeight: 700, letterSpacing: "0.05em" }}>AUO TERMINAL</span>
+          <span style={{ fontSize: "8px", color: "#7a8599", marginLeft: "4px" }}>ADAPTIVE URGENCY ORCHESTRATOR</span>
+        </div>
+        <div style={{ display: "flex", alignItems: "center", gap: "10px", fontSize: "8px", color: "#7a8599" }}>
+          {result && <span>v{result.metadata.auo_version} · {result.metadata.processing_time_ms}ms · {result.metadata.confidence_score}</span>}
+          {recalcCount > 1 && <span style={{ padding: "2px 6px", background: "rgba(0,217,255,0.1)", borderRadius: "2px", color: "#00d9ff" }}>
+            {recalcCount} RECALC
+          </span>}
+          <span style={{ padding: "2px 6px", background: "#0d111a", borderRadius: "2px" }}>{API_BASE ? "⚡ API" : "🧪 MOCK"}</span>
+        </div>
+      </div>
 
-    // TWO COLUMN LAYOUT
-    React.createElement("div", {
-      style: { display: "grid", gridTemplateColumns: "320px 1fr", minHeight: "calc(100vh - 50px)" }
-    },
+      {/* MAIN GRID: 20% / 80% split */}
+      <div style={{ display: "grid", gridTemplateColumns: "20% 80%", gridTemplateRows: "auto 1fr",
+                    height: "calc(100vh - 33px)", gap: "1px", background: "#1a2332" }}>
+        
+        {/* LEFT COLUMN: Input (20%) */}
+        <div style={{ gridColumn: "1", gridRow: "1 / 3", background: "#0a0e1a", padding: "8px", display: "flex", flexDirection: "column", gap: "6px", overflowY: "auto" }}>
+          <div style={{ fontSize: "8px", textTransform: "uppercase", letterSpacing: "0.05em", color: "#7a8599", fontWeight: 600, marginBottom: "2px" }}>
+            ORDER INPUT
+          </div>
 
-      // ─── LEFT COLUMN: INPUT ───────────────────────────────
-      React.createElement("div", {
-        style: { borderRight: "1px solid var(--border)", padding: "16px", display: "flex", flexDirection: "column", gap: "12px", background: "var(--surface-1)" }
-      },
-        React.createElement("div", { style: { fontSize: "11px", textTransform: "uppercase", letterSpacing: "0.08em", color: "var(--text-dim)", fontWeight: 600, marginBottom: "2px" } }, "Order Input"),
+          {/* Symbol */}
+          <div style={{ position: "relative" }}>
+            <label style={{ fontSize: "8px", color: "#7a8599", marginBottom: "2px", display: "block" }}>SYMBOL</label>
+            <input type="text" placeholder="Search..." value={symbol || symbolSearch}
+              onChange={(e) => { setSymbolSearch(e.target.value); setSymbol(""); setShowSymbols(true); }}
+              onFocus={() => setShowSymbols(true)}
+              style={{ width: "100%", padding: "4px 6px", background: "#050810", border: "1px solid #1a2332",
+                       borderRadius: "2px", color: "#e0e6f0", fontSize: "10px" }} />
+            {showSymbols && symbolSearch && (
+              <div style={{ position: "absolute", top: "100%", left: 0, right: 0, background: "#0d111a",
+                            border: "1px solid #1a2332", borderRadius: "0 0 2px 2px", maxHeight: "150px",
+                            overflowY: "auto", zIndex: 50 }}>
+                {filteredSymbols.map(s => (
+                  <div key={s} onClick={() => { setSymbol(s); setSymbolSearch(""); setShowSymbols(false); }}
+                    style={{ padding: "4px 6px", fontSize: "9px", cursor: "pointer", color: "#b0b8c8", borderBottom: "1px solid #1a2332" }}
+                    onMouseEnter={(e) => e.target.style.background = "rgba(0,217,255,0.1)"}
+                    onMouseLeave={(e) => e.target.style.background = "transparent"}>
+                    {s}
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
 
-        // Symbol
-        React.createElement("div", { style: { position: "relative" } },
-          React.createElement("label", { style: { fontSize: "11px", color: "var(--text-dim)", marginBottom: "4px", display: "block" } }, "Symbol"),
-          React.createElement("input", {
-            type: "text", placeholder: "Search symbol...",
-            value: symbol || symbolSearch,
-            onChange: (e) => { setSymbolSearch(e.target.value); setSymbol(""); setShowSymbols(true); },
-            onFocus: () => setShowSymbols(true),
-            style: {
-              width: "100%", padding: "8px 10px", background: "var(--input-bg)", border: "1px solid var(--border)",
-              borderRadius: "6px", color: "var(--text-main)", fontSize: "13px", fontFamily: "var(--font-mono)"
-            }
-          }),
-          showSymbols && symbolSearch && React.createElement("div", {
-            style: {
-              position: "absolute", top: "100%", left: 0, right: 0, background: "var(--surface-2)",
-              border: "1px solid var(--border)", borderRadius: "0 0 6px 6px", maxHeight: "180px",
-              overflowY: "auto", zIndex: 50
-            }
-          },
-            filteredSymbols.map(s => React.createElement("div", {
-              key: s,
-              onClick: () => { setSymbol(s); setSymbolSearch(""); setShowSymbols(false); },
-              style: {
-                padding: "6px 10px", fontSize: "12px", fontFamily: "var(--font-mono)",
-                cursor: "pointer", color: "var(--text-sub)", borderBottom: "1px solid var(--border)"
-              },
-              onMouseEnter: (e) => { e.target.style.background = "var(--accent)22"; },
-              onMouseLeave: (e) => { e.target.style.background = "transparent"; },
-            }, s))
-          )
-        ),
+          {/* Client */}
+          <div>
+            <label style={{ fontSize: "8px", color: "#7a8599", marginBottom: "2px", display: "block" }}>CLIENT</label>
+            <select value={cpty} onChange={(e) => setCpty(e.target.value)}
+              style={{ width: "100%", padding: "4px 6px", background: "#050810", border: "1px solid #1a2332",
+                       borderRadius: "2px", color: "#e0e6f0", fontSize: "10px" }}>
+              <option value="">Select...</option>
+              {MOCK_CLIENTS.map(c => <option key={c.cpty_id} value={c.cpty_id}>{c.cpty_id} - {c.client_name}</option>)}
+            </select>
+          </div>
 
-        // Client
-        React.createElement("div", null,
-          React.createElement("label", { style: { fontSize: "11px", color: "var(--text-dim)", marginBottom: "4px", display: "block" } }, "Client"),
-          React.createElement("select", {
-            value: cpty, onChange: (e) => setCpty(e.target.value),
-            style: {
-              width: "100%", padding: "8px 10px", background: "var(--input-bg)", border: "1px solid var(--border)",
-              borderRadius: "6px", color: "var(--text-main)", fontSize: "13px"
-            }
-          },
-            React.createElement("option", { value: "" }, "Select client..."),
-            MOCK_CLIENTS.map(c => React.createElement("option", { key: c.cpty_id, value: c.cpty_id }, `${c.cpty_id} — ${c.client_name}`))
-          )
-        ),
+          {/* Quantity */}
+          <div>
+            <label style={{ fontSize: "8px", color: "#7a8599", marginBottom: "2px", display: "block" }}>QUANTITY</label>
+            <input type="number" placeholder="50000" value={qty} onChange={(e) => setQty(e.target.value)}
+              style={{ width: "100%", padding: "4px 6px", background: "#050810", border: "1px solid #1a2332",
+                       borderRadius: "2px", color: "#e0e6f0", fontSize: "10px" }} />
+          </div>
 
-        // Quantity
-        React.createElement("div", null,
-          React.createElement("label", { style: { fontSize: "11px", color: "var(--text-dim)", marginBottom: "4px", display: "block" } }, "Quantity"),
-          React.createElement("input", {
-            type: "number", placeholder: "e.g., 50000", value: qty,
-            onChange: (e) => setQty(e.target.value),
-            style: {
-              width: "100%", padding: "8px 10px", background: "var(--input-bg)", border: "1px solid var(--border)",
-              borderRadius: "6px", color: "var(--text-main)", fontSize: "13px", fontFamily: "var(--font-mono)"
-            }
-          })
-        ),
+          {/* Notes */}
+          <div>
+            <label style={{ fontSize: "8px", color: "#7a8599", marginBottom: "2px", display: "block" }}>NOTES</label>
+            <textarea placeholder="EOD compliance required..." value={notes} onChange={(e) => setNotes(e.target.value)} rows={3}
+              style={{ width: "100%", padding: "4px 6px", background: "#050810", border: "1px solid #1a2332",
+                       borderRadius: "2px", color: "#e0e6f0", fontSize: "9px", resize: "vertical" }} />
+          </div>
 
-        // Notes
-        React.createElement("div", null,
-          React.createElement("label", { style: { fontSize: "11px", color: "var(--text-dim)", marginBottom: "4px", display: "block" } }, "Order Notes"),
-          React.createElement("textarea", {
-            placeholder: "e.g., EOD compliance required - must attain position by close",
-            value: notes, onChange: (e) => setNotes(e.target.value), rows: 3,
-            style: {
-              width: "100%", padding: "8px 10px", background: "var(--input-bg)", border: "1px solid var(--border)",
-              borderRadius: "6px", color: "var(--text-main)", fontSize: "12px", resize: "vertical", lineHeight: 1.5
-            }
-          })
-        ),
+          {/* Time Slider */}
+          <div style={{ padding: "6px", background: "#0d111a", borderRadius: "3px", border: "1px solid #1a2332" }}>
+            <div style={{ display: "flex", justifyContent: "space-between", fontSize: "8px", color: "#7a8599", marginBottom: "3px" }}>
+              <span>TIME TO CLOSE</span>
+              <span style={{ color: ttc <= 25 ? "#ff4444" : ttc <= 60 ? "#ff8800" : "#e0e6f0", fontWeight: 700 }}>
+                {ttc}min {ttc <= 25 && "(CAS)"}
+              </span>
+            </div>
+            <input type="range" min={5} max={380} value={ttc} onChange={(e) => setTtc(+e.target.value)}
+              style={{ width: "100%", accentColor: ttc <= 25 ? "#ff4444" : "#00d9ff" }} />
+            <div style={{ display: "flex", justifyContent: "space-between", fontSize: "7px", color: "#7a8599", marginTop: "2px" }}>
+              <span>9:30</span><span>11AM</span><span>1PM</span><span>2:30</span><span>3:05</span><span>3:20</span>
+            </div>
+          </div>
 
-        // Time Slider
-        React.createElement("div", {
-          style: { padding: "10px 12px", background: "var(--surface-2)", borderRadius: "8px" }
-        }, React.createElement(TimeSlider, { value: ttc, onChange: setTtc })),
+          {/* Status */}
+          <div style={{ padding: "6px", borderRadius: "3px", background: loading ? "rgba(0,217,255,0.08)" : hasRun ? "rgba(0,217,102,0.08)" : "#0d111a",
+                        border: `1px solid ${loading ? "#00d9ff" : hasRun ? "#00d966" : "#1a2332"}`,
+                        display: "flex", alignItems: "center", justifyContent: "center", gap: "6px", fontSize: "9px", fontWeight: 600 }}>
+            {loading ? (
+              <>
+                <Activity size={10} className="pulse" style={{ color: "#00d9ff" }} />
+                <span style={{ color: "#00d9ff" }}>COMPUTING...</span>
+              </>
+            ) : hasRun ? (
+              <>
+                <Check size={10} style={{ color: "#00d966" }} />
+                <span style={{ color: "#00d966" }}>LIVE AUTO-RECALC</span>
+              </>
+            ) : (
+              <>
+                <CircleDot size={10} style={{ color: "#7a8599" }} />
+                <span style={{ color: "#7a8599" }}>{!symbol ? "ENTER SYMBOL" : !cpty ? "SELECT CLIENT" : "ENTER QTY"}</span>
+              </>
+            )}
+          </div>
 
-        // Live Status Indicator (replaces Run button)
-        React.createElement("div", {
-          style: {
-            width: "100%", padding: "10px 12px", borderRadius: "8px",
-            background: loading ? "rgba(91,138,245,0.08)" : hasRun ? "rgba(80,200,120,0.08)" : "var(--surface-2)",
-            border: `1px solid ${loading ? "var(--accent)" : hasRun ? "var(--conf-high)" : "var(--border)"}`,
-            display: "flex", alignItems: "center", justifyContent: "center", gap: "8px",
-            transition: "all 0.3s ease", fontSize: "12px", fontWeight: 600
-          }
-        },
-          loading
-            ? React.createElement(React.Fragment, null,
-                React.createElement(Activity, { size: 14, className: "loading-pulse", style: { color: "var(--accent)" } }),
-                React.createElement("span", { style: { color: "var(--accent)" } }, "Computing prefill...")
-              )
-            : hasRun
-              ? React.createElement(React.Fragment, null,
-                  React.createElement(Check, { size: 14, style: { color: "var(--conf-high)" } }),
-                  React.createElement("span", { style: { color: "var(--conf-high)" } }, "Live — changes auto-recalculate")
-                )
-              : React.createElement(React.Fragment, null,
-                  React.createElement(CircleDot, { size: 14, style: { color: "var(--text-dim)" } }),
-                  React.createElement("span", { style: { color: "var(--text-dim)" } },
-                    !symbol ? "Enter symbol..." : !cpty ? "Select client..." : "Enter quantity..."
-                  )
-                )
-        ),
+          {hasRun && (
+            <button onClick={resetAll}
+              style={{ width: "100%", padding: "5px", background: "transparent", border: "1px solid #1a2332",
+                       borderRadius: "2px", color: "#7a8599", fontSize: "9px", cursor: "pointer", display: "flex",
+                       alignItems: "center", justifyContent: "center", gap: "4px" }}>
+              <RotateCcw size={9} /> RESET
+            </button>
+          )}
 
-        hasRun && React.createElement("button", {
-          onClick: resetAll,
-          style: {
-            width: "100%", padding: "8px", background: "transparent", border: "1px solid var(--border)",
-            borderRadius: "6px", color: "var(--text-dim)", fontSize: "12px", cursor: "pointer",
-            display: "flex", alignItems: "center", justifyContent: "center", gap: "6px"
-          }
-        }, React.createElement(RotateCcw, { size: 12 }), "Reset All"),
+          {/* Presets */}
+          <div style={{ marginTop: "auto", paddingTop: "8px", borderTop: "1px solid #1a2332" }}>
+            <div style={{ fontSize: "7px", color: "#7a8599", marginBottom: "4px", textTransform: "uppercase" }}>QUICK PRESETS</div>
+            {[
+              { l: "CAS EOD", sym: "RELIANCE.NS", cl: "Client_XYZ", q: "50000", n: "EOD compliance required - must attain position by close", t: 25 },
+              { l: "VWAP AM", sym: "INFY.NS", cl: "Client_ABC", q: "75000", n: "VWAP must complete by 2pm", t: 330 },
+              { l: "URGENT", sym: "HDFCBANK.NS", cl: "Client_GHI", q: "200000", n: "Urgent buy - critical allocation", t: 60 },
+            ].map(pr => (
+              <button key={pr.l} onClick={() => { setSymbol(pr.sym); setCpty(pr.cl); setQty(pr.q); setNotes(pr.n); setTtc(pr.t); setSymbolSearch(""); setDriverOverrides({}); }}
+                style={{ width: "100%", padding: "4px 6px", background: "#0d111a", border: "1px solid #1a2332",
+                         borderRadius: "2px", color: "#b0b8c8", fontSize: "8px", cursor: "pointer", textAlign: "left",
+                         marginBottom: "3px" }}
+                onMouseEnter={(e) => e.target.style.borderColor = "#00d9ff"}
+                onMouseLeave={(e) => e.target.style.borderColor = "#1a2332"}>
+                {pr.l}
+              </button>
+            ))}
+          </div>
+        </div>
 
-        // Quick presets
-        React.createElement("div", {
-          style: { marginTop: "auto", padding: "10px 0", borderTop: "1px solid var(--border)" }
-        },
-          React.createElement("div", { style: { fontSize: "10px", color: "var(--text-dim)", marginBottom: "6px", textTransform: "uppercase", letterSpacing: "0.06em" } }, "Quick Presets"),
-          React.createElement("div", { style: { display: "flex", flexDirection: "column", gap: "4px" } },
-            [
-              { label: "Case 1: CAS EOD", sym: "RELIANCE.NS", cl: "Client_XYZ", q: "50000", n: "EOD compliance required - must attain position by close", t: 25 },
-              { label: "Case 2: VWAP Morning", sym: "INFY.NS", cl: "Client_ABC", q: "75000", n: "VWAP must complete by 2pm", t: 330 },
-              { label: "Case 3: Urgent Large", sym: "HDFCBANK.NS", cl: "Client_GHI", q: "200000", n: "Urgent buy - critical allocation", t: 60 },
-            ].map(p => React.createElement("button", {
-              key: p.label,
-              onClick: () => { setSymbol(p.sym); setCpty(p.cl); setQty(p.q); setNotes(p.n); setTtc(p.t); setSymbolSearch(""); setDriverOverrides({}); },
-              style: {
-                padding: "6px 10px", background: "var(--surface-2)", border: "1px solid var(--border)",
-                borderRadius: "4px", color: "var(--text-sub)", fontSize: "11px", cursor: "pointer",
-                textAlign: "left", transition: "all 0.15s"
-              },
-              onMouseEnter: (e) => { e.target.style.borderColor = "var(--accent)"; },
-              onMouseLeave: (e) => { e.target.style.borderColor = "var(--border)"; },
-            }, p.label))
-          )
-        )
-      ),
+        {/* TOP RIGHT: Urgency + Market (80%) */}
+        <div style={{ gridColumn: "2", gridRow: "1", background: "#0a0e1a", padding: "8px", display: "flex", flexDirection: "column", gap: "6px" }}>
+          {hasRun && result ? (
+            <>
+              <UrgencyStrip score={result.urgency_score} classification={result.urgency_classification} breakdown={result.urgency_breakdown} />
+              <MarketStrip ctx={result.market_context} />
+            </>
+          ) : !loading ? (
+            <div style={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: "8px", color: "#7a8599" }}>
+              <SlidersHorizontal size={24} style={{ opacity: 0.3 }} />
+              <span style={{ fontSize: "10px" }}>ENTER ORDER DETAILS TO GENERATE PREFILL</span>
+            </div>
+          ) : (
+            <div style={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: "8px", color: "#00d9ff" }}>
+              <Activity size={20} className="pulse" />
+              <span style={{ fontSize: "10px" }}>COMPUTING INTELLIGENT PREFILL...</span>
+            </div>
+          )}
+        </div>
 
-      // ─── RIGHT COLUMN: OUTPUT ─────────────────────────────
-      React.createElement("div", {
-        style: { padding: "16px 20px", overflowY: "auto", display: "flex", flexDirection: "column", gap: "12px" }
-      },
+        {/* BOTTOM RIGHT: Parameters Grid (3 columns) + Actions */}
+        <div style={{ gridColumn: "2", gridRow: "2", background: "#0a0e1a", padding: "0", display: "flex", flexDirection: "column", overflowY: "auto" }}>
+          
+          {/* Parameters Grid */}
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: "1px", flex: 1 }}>
+          
+          {/* Column 1: Core Execution */}
+          <div style={{ background: "#050810", display: "flex", flexDirection: "column" }}>
+            <PanelHeader title="Core Execution" icon={Target} tag={ctx?.cas_active ? "CAS" : null} />
+            <div style={{ padding: "4px" }}>
+              <CompactField label="Instrument" value={getValue(p.instrument)} hasRun={hasRun} confidence={p.instrument?.confidence} rationale={p.instrument?.rationale} icon={Box} disabled recalcGeneration={recalcGen} />
+              <CompactField label="Side" value={getValue(p.side)} options={["Buy", "Sell"]} hasRun={hasRun} confidence={p.side?.confidence} rationale={p.side?.rationale} icon={p.side?.value === "Sell" ? ArrowDownRight : ArrowUpRight} onDriverChange={handleDriverChange} recalcGeneration={recalcGen} />
+              <CompactField label="Quantity" value={getValue(p.quantity)} hasRun={hasRun} confidence={p.quantity?.confidence} rationale={p.quantity?.rationale} icon={BarChart3} type="number" recalcGeneration={recalcGen} />
+              <CompactField label="Order Type" value={getValue(p.order_type)} options={["Market", "Limit", "Stop", "Stop_Limit"]} hasRun={hasRun} confidence={p.order_type?.confidence} rationale={p.order_type?.rationale} icon={Layers} recalcGeneration={recalcGen} />
+              <CompactField label="Price Type" value={getValue(p.price_type)} options={["Market", "Limit", "Best", "Pegged"]} hasRun={hasRun} confidence={p.price_type?.confidence} rationale={p.price_type?.rationale} icon={TrendingUp} recalcGeneration={recalcGen} />
+              <CompactField label="Limit Price" value={getValue(p.limit_price)} hasRun={hasRun} confidence={p.limit_price?.confidence} rationale={p.limit_price?.rationale} icon={Target} type="number" recalcGeneration={recalcGen} />
+              <CompactField label="TIF" value={getValue(p.tif)} options={["GFD", "GTD", "IOC", "FOK", "CAS"]} hasRun={hasRun} confidence={p.tif?.confidence} rationale={p.tif?.rationale} icon={Clock} recalcGeneration={recalcGen} />
+              <CompactField label="Release" value={getValue(p.release_date)} hasRun={hasRun} confidence={p.release_date?.confidence} rationale={p.release_date?.rationale} icon={Clock} type="date" recalcGeneration={recalcGen} />
+              <CompactField label="Hold" value={getValue(p.hold)} options={["Yes", "No"]} hasRun={hasRun} confidence={p.hold?.confidence} rationale={p.hold?.rationale} icon={Shield} recalcGeneration={recalcGen} />
+              <CompactField label="Category" value={getValue(p.category)} options={["Client", "House", "Proprietary"]} hasRun={hasRun} confidence={p.category?.confidence} rationale={p.category?.rationale} icon={Shield} recalcGeneration={recalcGen} />
+              <CompactField label="Capacity" value={getValue(p.capacity)} options={["Principal", "Agent", "Riskless_Principal"]} hasRun={hasRun} confidence={p.capacity?.confidence} rationale={p.capacity?.rationale} icon={Shield} recalcGeneration={recalcGen} />
+              <CompactField label="Account" value={getValue(p.account)} hasRun={hasRun} confidence={p.account?.confidence} rationale={p.account?.rationale} icon={Shield} recalcGeneration={recalcGen} />
+            </div>
+          </div>
 
-        // Urgency + Market
-        hasRun && result && React.createElement(React.Fragment, null,
-          React.createElement(UrgencyGauge, {
-            score: result.urgency_score,
-            classification: result.urgency_classification,
-            breakdown: result.urgency_breakdown
-          }),
-          React.createElement(MarketBar, { ctx: result.market_context }),
-        ),
+          {/* Column 2: Algo Strategy */}
+          <div style={{ background: "#050810", display: "flex", flexDirection: "column" }}>
+            <PanelHeader title="Algo Strategy" icon={Cpu} />
+            <div style={{ padding: "4px" }}>
+              <CompactField label="Service" value={getValue(p.service)} options={["BlueBox 2", "Market", "DMA"]} hasRun={hasRun} confidence={p.service?.confidence} rationale={p.service?.rationale} icon={Cpu} recalcGeneration={recalcGen} />
+              <CompactField label="Executor" value={getValue(p.executor)} options={["VWAP", "TWAP", "POV", "ICEBERG"]} hasRun={hasRun} confidence={p.executor?.confidence} rationale={p.executor?.rationale} icon={Activity} recalcGeneration={recalcGen} />
+              <CompactField label="Pricing" value={getValue(p.pricing)} options={["Adaptive", "Passive", "Aggressive"]} hasRun={hasRun} confidence={p.pricing?.confidence} rationale={p.pricing?.rationale} icon={TrendingUp} recalcGeneration={recalcGen} />
+              <CompactField label="Layering" value={getValue(p.layering)} options={["Auto", "Manual", "Percentage"]} hasRun={hasRun} confidence={p.layering?.confidence} rationale={p.layering?.rationale} icon={Layers} recalcGeneration={recalcGen} />
+              <CompactField label="Urgency" value={getValue(p.urgency_setting)} options={["Low", "Medium", "High", "Auto"]} hasRun={hasRun} confidence={p.urgency_setting?.confidence} rationale={p.urgency_setting?.rationale} icon={Gauge} recalcGeneration={recalcGen} />
+              <CompactField label="Get Done" value={getValue(p.get_done)} options={["True", "False"]} hasRun={hasRun} confidence={p.get_done?.confidence} rationale={p.get_done?.rationale} icon={Check} recalcGeneration={recalcGen} />
+              <CompactField label="Open Print" value={getValue(p.opening_print)} options={["True", "False"]} hasRun={hasRun} confidence={p.opening_print?.confidence} rationale={p.opening_print?.rationale} icon={Eye} recalcGeneration={recalcGen} />
+              <CompactField label="Open %" value={getValue(p.opening_pct)} hasRun={hasRun} confidence={p.opening_pct?.confidence} rationale={p.opening_pct?.rationale} icon={Eye} type="number" recalcGeneration={recalcGen} />
+              <CompactField label="Close Print" value={getValue(p.closing_print)} options={["True", "False"]} hasRun={hasRun} confidence={p.closing_print?.confidence} rationale={p.closing_print?.rationale} icon={EyeOff} recalcGeneration={recalcGen} />
+              <CompactField label="Close %" value={getValue(p.closing_pct)} hasRun={hasRun} confidence={p.closing_pct?.confidence} rationale={p.closing_pct?.rationale} icon={EyeOff} type="number" recalcGeneration={recalcGen} />
+            </div>
+          </div>
 
-        !hasRun && !loading && React.createElement("div", {
-          style: {
-            flex: 1, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center",
-            color: "var(--text-dim)", gap: "12px"
-          }
-        },
-          React.createElement(SlidersHorizontal, { size: 32, style: { opacity: 0.3 } }),
-          React.createElement("span", { style: { fontSize: "13px" } }, "Fill in Symbol, Client & Quantity to auto-generate prefill"),
-          React.createElement("span", { style: { fontSize: "11px", fontFamily: "var(--font-mono)" } }, "Parameters update live as you change inputs"),
-        ),
+          {/* Column 3: Advanced */}
+          <div style={{ background: "#050810", display: "flex", flexDirection: "column" }}>
+            <PanelHeader title="Advanced" icon={SlidersHorizontal} />
+            <div style={{ padding: "4px" }}>
+              <div style={{ fontSize: "8px", color: "#7a8599", padding: "3px 0", fontWeight: 600 }}>CROSSING</div>
+              <CompactField label="Min Cross" value={getValue(p.min_cross_qty)} hasRun={hasRun} confidence={p.min_cross_qty?.confidence} rationale={p.min_cross_qty?.rationale} icon={Crosshair} type="number" recalcGeneration={recalcGen} />
+              <CompactField label="Max Cross" value={getValue(p.max_cross_qty)} hasRun={hasRun} confidence={p.max_cross_qty?.confidence} rationale={p.max_cross_qty?.rationale} icon={Crosshair} type="number" recalcGeneration={recalcGen} />
+              <CompactField label="Cross Unit" value={getValue(p.cross_qty_unit)} options={["Shares", "Value", "Percentage"]} hasRun={hasRun} confidence={p.cross_qty_unit?.confidence} rationale={p.cross_qty_unit?.rationale} icon={Crosshair} recalcGeneration={recalcGen} />
+              <CompactField label="Leave Active" value={getValue(p.leave_active_slice)} options={["True", "False"]} hasRun={hasRun} confidence={p.leave_active_slice?.confidence} rationale={p.leave_active_slice?.rationale} icon={Crosshair} recalcGeneration={recalcGen} />
+              
+              <div style={{ fontSize: "8px", color: "#7a8599", padding: "3px 0", fontWeight: 600, marginTop: "6px" }}>IWOULD</div>
+              <CompactField label="IW Price" value={getValue(p.iwould_price)} hasRun={hasRun} confidence={p.iwould_price?.confidence} rationale={p.iwould_price?.rationale} icon={Target} type="number" recalcGeneration={recalcGen} />
+              <CompactField label="IW Qty" value={getValue(p.iwould_qty)} hasRun={hasRun} confidence={p.iwould_qty?.confidence} rationale={p.iwould_qty?.rationale} icon={BarChart3} type="number" recalcGeneration={recalcGen} />
+              
+              <div style={{ fontSize: "8px", color: "#7a8599", padding: "3px 0", fontWeight: 600, marginTop: "6px" }}>DYNAMIC LIMITS</div>
+              <CompactField label="Lim Option" value={getValue(p.limit_option)} options={["Order Limit", "Primary Best Bid", "Primary Best Ask", "VWAP", "Midpoint"]} hasRun={hasRun} confidence={p.limit_option?.confidence} rationale={p.limit_option?.rationale} icon={SlidersHorizontal} recalcGeneration={recalcGen} />
+              <CompactField label="Lim Offset" value={getValue(p.limit_offset)} hasRun={hasRun} confidence={p.limit_offset?.confidence} rationale={p.limit_offset?.rationale} icon={SlidersHorizontal} type="number" recalcGeneration={recalcGen} />
+              <CompactField label="Offset Unit" value={getValue(p.offset_unit)} options={["Tick", "BPS", "Percentage"]} hasRun={hasRun} confidence={p.offset_unit?.confidence} rationale={p.offset_unit?.rationale} icon={SlidersHorizontal} recalcGeneration={recalcGen} />
+            </div>
+          </div>
+          </div>
 
-        loading && !hasRun && React.createElement("div", {
-          style: {
-            flex: 1, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center",
-            color: "var(--accent)", gap: "12px"
-          }
-        },
-          React.createElement(Activity, { size: 28, className: "loading-pulse" }),
-          React.createElement("span", { style: { fontSize: "13px" } }, "Computing intelligent prefill..."),
-        ),
-
-        // ─── BLOCK A: Core Execution ───
-        React.createElement("div", {
-          style: { background: "var(--surface-1)", borderRadius: "8px", border: "1px solid var(--border)", overflow: "hidden" }
-        },
-          React.createElement(SectionHeader, { icon: Target, title: "Core Execution", subtitle: "Tier 1 & 2", tag: ctx?.cas_active ? "CAS" : null }),
-          React.createElement(SmartField, { label: "Instrument", value: getValue(p.instrument), hasRun, confidence: p.instrument?.confidence, rationale: p.instrument?.rationale, icon: Box, disabled: true, recalcGeneration: recalcGen }),
-          React.createElement(SmartField, { label: "Side", value: getValue(p.side), options: ["Buy", "Sell"], hasRun, confidence: p.side?.confidence, rationale: p.side?.rationale, icon: p.side?.value === "Sell" ? ArrowDownRight : ArrowUpRight, onDriverChange: handleDriverChange, recalcGeneration: recalcGen }),
-          React.createElement(SmartField, { label: "Quantity", value: getValue(p.quantity), hasRun, confidence: p.quantity?.confidence, rationale: p.quantity?.rationale, icon: BarChart3, type: "number", recalcGeneration: recalcGen }),
-          React.createElement(SmartField, { label: "Order Type", value: getValue(p.order_type), options: ["Market", "Limit", "Stop", "Stop_Limit"], hasRun, confidence: p.order_type?.confidence, rationale: p.order_type?.rationale, icon: Layers, recalcGeneration: recalcGen }),
-          React.createElement(SmartField, { label: "Price Type", value: getValue(p.price_type), options: ["Market", "Limit", "Best", "Pegged"], hasRun, confidence: p.price_type?.confidence, rationale: p.price_type?.rationale, icon: TrendingUp, recalcGeneration: recalcGen }),
-          React.createElement(SmartField, { label: "Limit Price", value: getValue(p.limit_price), hasRun, confidence: p.limit_price?.confidence, rationale: p.limit_price?.rationale, icon: Target, type: "number", recalcGeneration: recalcGen }),
-          React.createElement(SmartField, { label: "TIF", value: getValue(p.tif), options: ["GFD", "GTD", "IOC", "FOK", "CAS"], hasRun, confidence: p.tif?.confidence, rationale: p.tif?.rationale, icon: Clock, recalcGeneration: recalcGen }),
-          React.createElement(SmartField, { label: "Release Date", value: getValue(p.release_date), hasRun, confidence: p.release_date?.confidence, rationale: p.release_date?.rationale, icon: Clock, type: "date", recalcGeneration: recalcGen }),
-          React.createElement(SmartField, { label: "Hold", value: getValue(p.hold), options: ["Yes", "No"], hasRun, confidence: p.hold?.confidence, rationale: p.hold?.rationale, icon: Shield, recalcGeneration: recalcGen }),
-          React.createElement(SmartField, { label: "Category", value: getValue(p.category), options: ["Client", "House", "Proprietary"], hasRun, confidence: p.category?.confidence, rationale: p.category?.rationale, icon: Shield, recalcGeneration: recalcGen }),
-          React.createElement(SmartField, { label: "Capacity", value: getValue(p.capacity), options: ["Principal", "Agent", "Riskless_Principal"], hasRun, confidence: p.capacity?.confidence, rationale: p.capacity?.rationale, icon: Shield, recalcGeneration: recalcGen }),
-          React.createElement(SmartField, { label: "Account", value: getValue(p.account), hasRun, confidence: p.account?.confidence, rationale: p.account?.rationale, icon: Shield, recalcGeneration: recalcGen }),
-        ),
-
-        // ─── BLOCK B: Algo Strategy ───
-        React.createElement("div", {
-          style: { background: "var(--surface-1)", borderRadius: "8px", border: "1px solid var(--border)", overflow: "hidden" }
-        },
-          React.createElement(SectionHeader, { icon: Cpu, title: "Algo Strategy Engine", subtitle: "Tier 3" }),
-          React.createElement(SmartField, { label: "Service", value: getValue(p.service), options: ["BlueBox 2", "Market", "DMA"], hasRun, confidence: p.service?.confidence, rationale: p.service?.rationale, icon: Cpu, recalcGeneration: recalcGen }),
-          React.createElement(SmartField, { label: "Executor", value: getValue(p.executor), options: ["VWAP", "TWAP", "POV", "ICEBERG"], hasRun, confidence: p.executor?.confidence, rationale: p.executor?.rationale, icon: Activity, recalcGeneration: recalcGen }),
-          React.createElement(SmartField, { label: "Pricing", value: getValue(p.pricing), options: ["Adaptive", "Passive", "Aggressive"], hasRun, confidence: p.pricing?.confidence, rationale: p.pricing?.rationale, icon: TrendingUp, recalcGeneration: recalcGen }),
-          React.createElement(SmartField, { label: "Layering", value: getValue(p.layering), options: ["Auto", "Manual", "Percentage"], hasRun, confidence: p.layering?.confidence, rationale: p.layering?.rationale, icon: Layers, recalcGeneration: recalcGen }),
-          React.createElement(SmartField, { label: "Urgency", value: getValue(p.urgency_setting), options: ["Low", "Medium", "High", "Auto"], hasRun, confidence: p.urgency_setting?.confidence, rationale: p.urgency_setting?.rationale, icon: Gauge, recalcGeneration: recalcGen }),
-          React.createElement(SmartField, { label: "Get Done?", value: getValue(p.get_done), options: ["True", "False"], hasRun, confidence: p.get_done?.confidence, rationale: p.get_done?.rationale, icon: Check, recalcGeneration: recalcGen }),
-          React.createElement(SmartField, { label: "Open Print?", value: getValue(p.opening_print), options: ["True", "False"], hasRun, confidence: p.opening_print?.confidence, rationale: p.opening_print?.rationale, icon: Eye, recalcGeneration: recalcGen }),
-          React.createElement(SmartField, { label: "Open %", value: getValue(p.opening_pct), hasRun, confidence: p.opening_pct?.confidence, rationale: p.opening_pct?.rationale, icon: Eye, type: "number", recalcGeneration: recalcGen }),
-          React.createElement(SmartField, { label: "Close Print?", value: getValue(p.closing_print), options: ["True", "False"], hasRun, confidence: p.closing_print?.confidence, rationale: p.closing_print?.rationale, icon: EyeOff, recalcGeneration: recalcGen }),
-          React.createElement(SmartField, { label: "Close %", value: getValue(p.closing_pct), hasRun, confidence: p.closing_pct?.confidence, rationale: p.closing_pct?.rationale, icon: EyeOff, type: "number", recalcGeneration: recalcGen }),
-        ),
-
-        // ─── BLOCK C: Crossing & Dark Pool ───
-        React.createElement("div", {
-          style: { background: "var(--surface-1)", borderRadius: "8px", border: "1px solid var(--border)", overflow: "hidden" }
-        },
-          React.createElement(SectionHeader, { icon: Crosshair, title: "Crossing & Dark Pool" }),
-          React.createElement(SmartField, { label: "Min Cross", value: getValue(p.min_cross_qty), hasRun, confidence: p.min_cross_qty?.confidence, rationale: p.min_cross_qty?.rationale, icon: Crosshair, type: "number", recalcGeneration: recalcGen }),
-          React.createElement(SmartField, { label: "Max Cross", value: getValue(p.max_cross_qty), hasRun, confidence: p.max_cross_qty?.confidence, rationale: p.max_cross_qty?.rationale, icon: Crosshair, type: "number", recalcGeneration: recalcGen }),
-          React.createElement(SmartField, { label: "Cross Unit", value: getValue(p.cross_qty_unit), options: ["Shares", "Value", "Percentage"], hasRun, confidence: p.cross_qty_unit?.confidence, rationale: p.cross_qty_unit?.rationale, icon: Crosshair, recalcGeneration: recalcGen }),
-          React.createElement(SmartField, { label: "Leave Active", value: getValue(p.leave_active_slice), options: ["True", "False"], hasRun, confidence: p.leave_active_slice?.confidence, rationale: p.leave_active_slice?.rationale, icon: Crosshair, recalcGeneration: recalcGen }),
-        ),
-
-        // ─── BLOCK D: IWould ───
-        React.createElement("div", {
-          style: { background: "var(--surface-1)", borderRadius: "8px", border: "1px solid var(--border)", overflow: "hidden" }
-        },
-          React.createElement(SectionHeader, { icon: Zap, title: "Conditional Liquidity (IWould)" }),
-          hasRun && result?.urgency_score > 70 && React.createElement("div", {
-            style: { padding: "6px 12px", fontSize: "11px", color: "#ff8c42", background: "rgba(255,140,66,0.08)", display: "flex", alignItems: "center", gap: "6px" }
-          }, React.createElement(AlertTriangle, { size: 12 }), "High urgency — IWould typically not applicable"),
-          React.createElement(SmartField, { label: "IWould Price", value: getValue(p.iwould_price), hasRun, confidence: p.iwould_price?.confidence, rationale: p.iwould_price?.rationale, icon: Target, type: "number", recalcGeneration: recalcGen }),
-          React.createElement(SmartField, { label: "IWould Qty", value: getValue(p.iwould_qty), hasRun, confidence: p.iwould_qty?.confidence, rationale: p.iwould_qty?.rationale, icon: BarChart3, type: "number", recalcGeneration: recalcGen }),
-        ),
-
-        // ─── BLOCK E: Dynamic Limits ───
-        React.createElement("div", {
-          style: { background: "var(--surface-1)", borderRadius: "8px", border: "1px solid var(--border)", overflow: "hidden" }
-        },
-          React.createElement(SectionHeader, { icon: SlidersHorizontal, title: "Dynamic Limits" }),
-          React.createElement(SmartField, { label: "Limit Option", value: getValue(p.limit_option), options: ["Order Limit", "Primary Best Bid", "Primary Best Ask", "VWAP", "Midpoint"], hasRun, confidence: p.limit_option?.confidence, rationale: p.limit_option?.rationale, icon: SlidersHorizontal, recalcGeneration: recalcGen }),
-          React.createElement(SmartField, { label: "Limit Offset", value: getValue(p.limit_offset), hasRun, confidence: p.limit_offset?.confidence, rationale: p.limit_offset?.rationale, icon: SlidersHorizontal, type: "number", recalcGeneration: recalcGen }),
-          React.createElement(SmartField, { label: "Offset Unit", value: getValue(p.offset_unit), options: ["Tick", "BPS", "Percentage"], hasRun, confidence: p.offset_unit?.confidence, rationale: p.offset_unit?.rationale, icon: SlidersHorizontal, recalcGeneration: recalcGen }),
-        ),
-
-        // ─── ACTION BAR ───
-        hasRun && React.createElement("div", {
-          style: {
-            display: "flex", gap: "10px", padding: "12px 0", borderTop: "1px solid var(--border)",
-            position: "sticky", bottom: 0, background: "var(--bg)", paddingBottom: "16px"
-          }
-        },
-          React.createElement("button", {
-            style: {
-              flex: 1, padding: "12px", background: "var(--accent)", border: "none", borderRadius: "8px",
-              color: "white", fontSize: "13px", fontWeight: 700, cursor: "pointer",
-              display: "flex", alignItems: "center", justifyContent: "center", gap: "8px"
-            },
-            onClick: () => alert("Order submitted! (mock)")
-          }, React.createElement(Send, { size: 14 }), "Submit Order"),
-          React.createElement("button", {
-            style: {
-              padding: "12px 20px", background: "transparent", border: "1px solid var(--border)",
-              borderRadius: "8px", color: "var(--text-sub)", fontSize: "12px", cursor: "pointer"
-            },
-            onClick: resetAll
-          }, "Cancel"),
-        ),
-      )
-    )
+          {/* Action Bar */}
+          {hasRun && (
+            <div style={{ padding: "8px", background: "#0a0e1a", borderTop: "1px solid #1a2332", display: "flex", gap: "8px" }}>
+              <button onClick={() => alert("Order submitted! (mock)")}
+                style={{ flex: 1, padding: "12px", background: "#00d9ff", border: "none", borderRadius: "3px",
+                         color: "#000", fontSize: "11px", fontWeight: 700, cursor: "pointer", display: "flex",
+                         alignItems: "center", justifyContent: "center", gap: "6px" }}>
+                <Send size={12} /> SUBMIT ORDER
+              </button>
+              <button onClick={resetAll}
+                style={{ padding: "12px 20px", background: "transparent", border: "1px solid #1a2332",
+                         borderRadius: "3px", color: "#7a8599", fontSize: "10px", cursor: "pointer" }}>
+                CANCEL
+              </button>
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
   );
 }
