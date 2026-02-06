@@ -169,48 +169,49 @@ export default function MarketIntel() {
   const [expandedCatalyst, setExpandedCatalyst] = useState(null);
   const timerRef = useRef(null);
 
-  const fetchIntel = useCallback(async () => {
-    setLoading(true);
-    setError(null);
-    try {
-      const userPrompt = `Market region: ${MARKET_REGION}\nWatchlist symbols: ${WATCHLIST_SYMBOLS.join(", ")}\n\nProvide a complete real-time market intelligence snapshot for today. Search for the latest prices, news, and macro events. Return ONLY the JSON object as specified.`;
+const fetchIntel = useCallback(async () => {
+  setLoading(true);
+  setError(null);
+  
+  // PASTE YOUR PERPLEXITY KEY HERE
+  const PERPLEXITY_API_KEY = "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"; 
 
-      const response = await fetch("https://api.anthropic.com/v1/messages", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          model: "claude-sonnet-4-20250514",
-          max_tokens: 4000,
-          system: SONAR_SYSTEM_PROMPT,
-          messages: [{ role: "user", content: userPrompt }],
-          tools: [{ type: "web_search_20250305", name: "web_search" }]
-        })
-      });
+  try {
+    const response = await fetch("https://api.perplexity.ai/chat/completions", {
+      method: "POST",
+      headers: {
+        "Authorization": `Bearer ${PERPLEXITY_API_KEY}`,
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify({
+        model: "sonar-pro", // This model has native live web search
+        messages: [
+          { role: "system", content: SONAR_SYSTEM_PROMPT },
+          { role: "user", content: `Market region: ${MARKET_REGION}. Watchlist: ${WATCHLIST_SYMBOLS.join(", ")}` }
+        ]
+      })
+    });
 
-      if (!response.ok) throw new Error(`API ${response.status}`);
-      const result = await response.json();
-
-      // Extract text from response content blocks
-      const text = result.content
-        ?.map(b => b.type === "text" ? b.text : "")
-        .filter(Boolean)
-        .join("\n") || "";
-
-      // Parse JSON from response (strip any markdown fences)
-      const clean = text.replace(/```json|```/g, "").trim();
-      const parsed = JSON.parse(clean);
-      setData(parsed);
-      setSource("live");
-      setLastUpdated(new Date());
-    } catch (err) {
-      console.warn("API fetch failed, using mock:", err.message);
-      setData(MOCK_DATA);
-      setSource("mock");
-      setLastUpdated(new Date());
-      if (err.message.includes("API")) setError("API unavailable — showing cached data");
-    }
-    setLoading(false);
-  }, []);
+    if (!response.ok) throw new Error(`API Error: ${response.status}`);
+    
+    const result = await response.json();
+    const content = result.choices[0].message.content;
+    
+    // Clean JSON if the AI added markdown fences (```json)
+    const cleanJson = content.replace(/```json|```/g, "").trim();
+    const parsed = JSON.parse(cleanJson);
+    
+    setData(parsed);
+    setSource("live");
+    setLastUpdated(new Date());
+  } catch (err) {
+    console.error("Fetch failed:", err);
+    setError("Live Link Failed - Using Internal Cache");
+    setData(MOCK_DATA);
+    setSource("mock");
+  }
+  setLoading(false);
+}, []);
 
   // Initial fetch + auto-refresh every 5 minutes
   useEffect(() => {
@@ -291,7 +292,12 @@ export default function MarketIntel() {
         <div style={{ flex: 1, overflow: "auto", padding: "8px", display: "flex", flexDirection: "column", gap: "8px" }}>
 
           {/* ═══ ROW 1: MACRO NARRATIVE + BENCHMARKS ═══ */}
-          <div style={{ display: "grid", gridTemplateColumns: "1fr 320px", gap: "8px" }}>
+          <div style={{
+  display: "grid",
+  gridTemplateColumns: "1fr 320px",
+  gap: "1px",
+  background: "#1a2332"
+}}>
 
             {/* Macro Narrative Card */}
             <div className="intel-card">
@@ -371,7 +377,7 @@ export default function MarketIntel() {
                     <div key={i} style={{
                       flex: 1, padding: "8px 6px", background: pctBg(s.change_pct),
                       borderRadius: "3px", textAlign: "center", cursor: "default",
-                      border: `1px solid ${pctColor(s.change_pct)}22`
+                      border: "1px solid #1a2332"
                     }} title={s.driver}>
                       <div style={{ fontSize: "9px", fontWeight: 700, color: "#e0e6f0", marginBottom: "3px" }}>
                         {s.sector}
@@ -391,7 +397,13 @@ export default function MarketIntel() {
           )}
 
           {/* ═══ ROW 3: OUTLIERS + CATALYSTS + PREDICTIONS ═══ */}
-          <div style={{ display: "grid", gridTemplateColumns: "1fr 300px 280px", gap: "8px", flex: 1, minHeight: 0 }}>
+          <div style={{
+  display: "grid",
+  gridTemplateColumns: "1fr 300px 280px",
+  gap: "1px",
+  background: "#1a2332"
+}}>
+
 
             {/* Outlier Scanner */}
             <div className="intel-card" style={{ display: "flex", flexDirection: "column" }}>

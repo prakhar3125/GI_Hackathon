@@ -1,35 +1,66 @@
-// src/App.jsx
 import React from "react";
-import { BrowserRouter, Routes, Route, Navigate, Link, Outlet } from "react-router-dom";
+import { Routes, Route, Navigate, NavLink, Outlet } from "react-router-dom";
 
-// 1. Import your pages
-import Home from "./pages/Home"; // Your existing AUO Ticket component
-import OrderBlotter from "./auo-order-blotter"; // The new code you just saved
+// ─── 1. IMPORTS ──────────────────────────────────────────────────
+import AUOSmartTicket from "./auo-smart-ticket.jsx";
+import OrderBlotter from "./auo-order-blotter.jsx";
+import MarketIntel from "./market-intel.jsx"; 
 
-// 2. Create a Layout Component for Navigation
-function Layout() {
+// ─── 2. STYLING HELPERS ──────────────────────────────────────────
+const getLinkStyle = ({ isActive }) => ({
+  color: isActive ? "#00d9ff" : "#7a8599",
+  textDecoration: "none",
+  fontWeight: isActive ? "bold" : "normal",
+  padding: "4px 12px",
+  fontSize: "11px",
+  fontFamily: "monospace",
+  borderBottom: isActive ? "2px solid #00d9ff" : "2px solid transparent",
+  background: isActive ? "rgba(0, 217, 255, 0.05)" : "transparent",
+  transition: "all 0.2s ease"
+});
+
+// ─── 3. LAYOUT COMPONENT ────────────────────────────────────────
+function AppLayout() {
   return (
-    <div style={{ display: "flex", flexDirection: "column", height: "100vh", overflow: "hidden" }}>
-      {/* Top Navigation Bar */}
+    <div style={{ 
+      display: "flex", 
+      flexDirection: "column", 
+      height: "100vh", 
+      width: "100vw",
+      background: "#050810" 
+    }}>
+      {/* Navigation Bar */}
       <nav style={{ 
-        display: "flex", alignItems: "center", gap: "20px", padding: "10px 20px", 
-        background: "#050810", borderBottom: "1px solid #1a2332", 
-        fontSize: "12px", fontFamily: "monospace", flexShrink: 0 
+        display: "flex", 
+        alignItems: "center",
+        gap: "10px", 
+        padding: "0 20px", 
+        height: "50px",
+        background: "#0a0e1a", 
+        borderBottom: "1px solid #1a2332", 
+        flexShrink: 0 
       }}>
-        <div style={{ color: "#00d9ff", fontWeight: "bold", marginRight: "10px", fontSize: "14px" }}>
+        <div style={{ 
+          color: "#00d9ff", 
+          fontWeight: "bold", 
+          marginRight: "20px",
+          fontSize: "13px",
+          fontFamily: "monospace",
+          letterSpacing: "0.1em"
+        }}>
           AUO TERMINAL
         </div>
         
-        {/* Navigation Links */}
-        <Link to="/home" style={navLinkStyle}>
-          TICKET (HOME)
-        </Link>
-        <Link to="/data" style={navLinkStyle}>
-          BLOTTER (DATA)
-        </Link>
+        <NavLink to="/home" style={getLinkStyle}>TICKET</NavLink>
+        <NavLink to="/data" style={getLinkStyle}>BLOTTER</NavLink>
+        <NavLink to="/markets" style={getLinkStyle}>MARKETS</NavLink>
+        
+        <div style={{ marginLeft: "auto", fontSize: "9px", color: "#3a4255", fontFamily: "monospace" }}>
+          SYS_READY // V1.0.6
+        </div>
       </nav>
-
-      {/* Content Area - Renders the child route */}
+      
+      {/* Viewport Area */}
       <div style={{ flex: 1, overflow: "hidden", position: "relative" }}>
         <Outlet />
       </div>
@@ -37,33 +68,18 @@ function Layout() {
   );
 }
 
-const navLinkStyle = {
-  color: "#e0e6f0", 
-  textDecoration: "none", 
-  fontWeight: "bold",
-  padding: "4px 8px",
-  border: "1px solid transparent",
-  borderRadius: "4px",
-  transition: "all 0.2s"
-};
-
-// 3. Define the Routes
+// ─── 4. ROUTES ──────────────────────────────────────────────────
 export default function App() {
   return (
-    <BrowserRouter>
-      <Routes>
-        {/* Wrap pages in Layout to show the Nav Bar */}
-        <Route element={<Layout />}>
-          <Route path="/home" element={<Home />} />
-          <Route path="/data" element={<OrderBlotter />} />
-        </Route>
+    <Routes>
+      <Route element={<AppLayout />}>
+        <Route path="/home" element={<AUOSmartTicket />} />
+        <Route path="/data" element={<OrderBlotter />} />
+        <Route path="/markets" element={<MarketIntel />} />
+      </Route>
 
-        {/* Redirect root to /home */}
-        <Route path="/" element={<Navigate to="/home" replace />} />
-        
-        {/* 404 Page */}
-        <Route path="*" element={<div style={{color: 'white', padding: '20px'}}>404 - Page Not Found</div>} />
-      </Routes>
-    </BrowserRouter>
+      <Route path="/" element={<Navigate to="/home" replace />} />
+      <Route path="*" element={<div style={{color: 'red', padding: '20px'}}>404: MODULE_NOT_FOUND</div>} />
+    </Routes>
   );
 }
