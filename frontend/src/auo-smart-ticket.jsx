@@ -1,10 +1,10 @@
-import React, { useState, useEffect, useRef } from "react";
+import React, { useState, useEffect, useRef, useCallback } from "react";
 import { 
   Zap, Clock, TrendingUp, Shield, ChevronDown, ChevronRight,
   Check, Pencil, AlertTriangle, Info, Send, RotateCcw, 
   Activity, Target, Layers, BarChart3, Eye, EyeOff,
   ArrowUpRight, ArrowDownRight, Gauge, CircleDot, Box,
-  Timer, Crosshair, SlidersHorizontal, Cpu
+  Timer, Crosshair, SlidersHorizontal, Cpu, RefreshCw
 } from "lucide-react";
 
 // ─── API CONFIG ─────────────────────────────────────────────────
@@ -58,8 +58,12 @@ function mockPrefill(input) {
   const classification = urgencyScore >= 80 ? "CRITICAL" : urgencyScore >= 60 ? "HIGH" : urgencyScore >= 40 ? "MEDIUM" : "LOW";
 
   // Side detection
-  let side = null, sideConf = "LOW", sideRat = "Require manual selection";
-  if (notes.includes("buy") || notes.includes("purchase") || notes.includes("long")) {
+  // Side: honor user override, else detect from notes
+  let side = input.side || null;
+  let sideConf = "LOW", sideRat = "Require manual selection";
+  if (side) {
+    sideConf = "HIGH"; sideRat = "User-specified side";
+  } else if (notes.includes("buy") || notes.includes("purchase") || notes.includes("long")) {
     side = "Buy"; sideConf = "HIGH"; sideRat = "Order notes indicate buy instruction";
   } else if (notes.includes("sell") || notes.includes("liquidate") || notes.includes("short")) {
     side = "Sell"; sideConf = "HIGH"; sideRat = "Order notes indicate sell instruction";
@@ -210,16 +214,35 @@ function mockPrefill(input) {
   });
 }
 
+// ─── DRIVER vs PASSENGER FIELDS ─────────────────────────────────
+// Driver fields on the RIGHT side: editing these triggers full recalc
+// because they affect downstream calculations (e.g., Side → Limit Price).
+// All other right-side fields are Passengers — they accept new server values.
+const DRIVER_FIELDS = new Set(["Side"]);
+
 // ─── SMART FIELD COMPONENT ──────────────────────────────────────
-function SmartField({ label, value, options, hasRun, confidence, rationale, icon, type, disabled: forceDisabled }) {
+function SmartField({ label, value, options, hasRun, confidence, rationale, icon, type, disabled: forceDisabled, onDriverChange, recalcGeneration }) {
   const [isEdited, setIsEdited] = useState(false);
   const [currentValue, setCurrentValue] = useState(value);
   const [showTip, setShowTip] = useState(false);
+  const [flash, setFlash] = useState(false);
   const tipRef = useRef(null);
+  const prevValueRef = useRef(value);
+  const isDriver = DRIVER_FIELDS.has(label);
 
+  // On recalc: Passengers accept new value & flash if changed; Drivers keep trader edit
   useEffect(() => {
-    if (!isEdited) setCurrentValue(value);
-  }, [value, isEdited]);
+    if (isDriver && isEdited) return; // keep trader override
+    const changed = prevValueRef.current !== value;
+    setCurrentValue(value);
+    setIsEdited(false);
+    prevValueRef.current = value;
+    if (changed && hasRun) {
+      setFlash(true);
+      const t = setTimeout(() => setFlash(false), 800);
+      return () => clearTimeout(t);
+    }
+  }, [value, recalcGeneration]);
 
   useEffect(() => {
     if (!showTip) return;
@@ -229,8 +252,10 @@ function SmartField({ label, value, options, hasRun, confidence, rationale, icon
   }, [showTip]);
 
   const handleChange = (e) => {
+    const newVal = e.target.value;
     setIsEdited(true);
-    setCurrentValue(e.target.value);
+    setCurrentValue(newVal);
+    if (isDriver && onDriverChange) onDriverChange(label, newVal);
   };
 
   const confColor = confidence === "HIGH" ? "var(--conf-high)" : confidence === "MEDIUM" ? "var(--conf-med)" : "var(--conf-low)";
@@ -243,9 +268,9 @@ function SmartField({ label, value, options, hasRun, confidence, rationale, icon
     React.createElement("div", {
       style: {
         display: "flex", alignItems: "center", gap: "8px", padding: "6px 10px",
-        borderRadius: "6px", transition: "all 0.2s",
-        background: isEdited ? "rgba(255,170,50,0.06)" : hasRun ? "transparent" : "rgba(255,255,255,0.02)",
-        opacity: hasRun ? 1 : 0.4, borderLeft: isEdited ? "2px solid var(--conf-med)" : "2px solid transparent",
+        borderRadius: "6px", transition: "all 0.3s",
+        background: flash ? "rgba(91,138,245,0.12)" : isEdited ? "rgba(255,170,50,0.06)" : hasRun ? "transparent" : "rgba(255,255,255,0.02)",
+        opacity: hasRun ? 1 : 0.4, borderLeft: isDriver && isEdited ? "2px solid var(--accent)" : isEdited ? "2px solid var(--conf-med)" : flash ? "2px solid var(--accent)" : "2px solid transparent",
         minHeight: "36px"
       }
     },
@@ -283,7 +308,7 @@ function SmartField({ label, value, options, hasRun, confidence, rationale, icon
       hasRun && React.createElement("span", {
         style: { fontSize: "13px", width: "20px", textAlign: "center", flexShrink: 0 }
       }, isEdited
-        ? React.createElement(Pencil, { size: 13, style: { color: "var(--conf-med)" } })
+        ? (isDriver ? React.createElement(RefreshCw, { size: 13, style: { color: "var(--accent)" } }) : React.createElement(Pencil, { size: 13, style: { color: "var(--conf-med)" } }))
         : React.createElement(Check, { size: 13, style: { color: confColor } })
       ),
       hasRun && rationale && React.createElement("div", {
@@ -310,6 +335,9 @@ function SmartField({ label, value, options, hasRun, confidence, rationale, icon
           React.createElement("div", {
             style: { fontSize: "9px", textTransform: "uppercase", letterSpacing: "0.08em", color: confColor, marginBottom: "4px", fontWeight: 600 }
           }, `${confidence} CONFIDENCE`),
+          isDriver && React.createElement("div", {
+            style: { fontSize: "9px", color: "var(--accent)", marginBottom: "4px", fontWeight: 600 }
+          }, "⚡ DRIVER — editing recalculates all parameters"),
           rationale
         )
       )
@@ -462,11 +490,22 @@ export default function AUOSmartTicket() {
   const [symbolSearch, setSymbolSearch] = useState("");
   const [showSymbols, setShowSymbols] = useState(false);
 
+  // Right-side driver overrides (e.g., Side) — trigger recalc when changed
+  const [driverOverrides, setDriverOverrides] = useState({});
+  const [recalcGen, setRecalcGen] = useState(0);
+  const [recalcCount, setRecalcCount] = useState(0);
+
   const filteredSymbols = MOCK_SYMBOLS.filter(s => s.toLowerCase().includes(symbolSearch.toLowerCase()));
   const debounceRef = useRef(null);
 
-  // Auto-trigger prefill whenever all required fields are filled
   const allFilled = !!(symbol && cpty && qty);
+
+  // Callback for right-side Driver fields
+  const handleDriverChange = useCallback((fieldLabel, newValue) => {
+    setDriverOverrides(prev => ({ ...prev, [fieldLabel]: newValue }));
+  }, []);
+
+  const overridesKey = JSON.stringify(driverOverrides);
 
   useEffect(() => {
     if (!allFilled) {
@@ -481,11 +520,13 @@ export default function AUOSmartTicket() {
     if (debounceRef.current) clearTimeout(debounceRef.current);
     debounceRef.current = setTimeout(async () => {
       try {
-        const inputData = { symbol, cpty_id: cpty, size: +qty, order_notes: notes, time_to_close: ttc };
+        const inputData = {
+          symbol, cpty_id: cpty, size: +qty, order_notes: notes, time_to_close: ttc,
+          side: driverOverrides["Side"] || null,
+        };
 
         let res;
         if (API_BASE) {
-          // ─── REAL BACKEND (FastAPI) ───
           const resp = await fetch(`${API_BASE}/api/prefill`, {
             method: "POST",
             headers: { "Content-Type": "application/json" },
@@ -494,23 +535,25 @@ export default function AUOSmartTicket() {
           if (!resp.ok) throw new Error(`API error ${resp.status}`);
           res = await resp.json();
         } else {
-          // ─── MOCK (built-in, no server needed) ───
           res = await mockPrefill(inputData);
         }
 
         setResult(res);
         setHasRun(true);
+        setRecalcGen(g => g + 1);
+        setRecalcCount(c => c + 1);
       } catch (err) {
         console.error("AUO prefill error:", err);
       }
       setLoading(false);
-    }, 300);
+    }, 400);
 
     return () => { if (debounceRef.current) clearTimeout(debounceRef.current); };
-  }, [symbol, cpty, qty, notes, ttc, allFilled]);
+  }, [symbol, cpty, qty, notes, ttc, allFilled, overridesKey]);
 
   const resetAll = () => {
     setResult(null); setHasRun(false); setSymbol(""); setCpty(""); setQty(""); setNotes(""); setTtc(25);
+    setDriverOverrides({}); setRecalcCount(0);
   };
 
   const p = result?.prefilled_params || {};
@@ -566,6 +609,9 @@ export default function AUOSmartTicket() {
         result && React.createElement("span", {
           style: { fontSize: "10px", color: "var(--text-dim)", fontFamily: "var(--font-mono)" }
         }, `v${result.metadata.auo_version} · ${result.metadata.processing_time_ms}ms · conf ${result.metadata.confidence_score}`),
+        recalcCount > 1 && React.createElement("span", {
+          style: { fontSize: "10px", padding: "3px 8px", background: "rgba(91,138,245,0.12)", borderRadius: "4px", color: "var(--accent)", fontFamily: "var(--font-mono)" }
+        }, `${recalcCount} recalcs`),
         React.createElement("span", {
           style: { fontSize: "10px", padding: "3px 8px", background: "var(--surface-2)", borderRadius: "4px", color: "var(--text-dim)", fontFamily: "var(--font-mono)" }
         }, API_BASE ? "⚡ API MODE" : "🧪 MOCK MODE")
@@ -680,7 +726,7 @@ export default function AUOSmartTicket() {
             : hasRun
               ? React.createElement(React.Fragment, null,
                   React.createElement(Check, { size: 14, style: { color: "var(--conf-high)" } }),
-                  React.createElement("span", { style: { color: "var(--conf-high)" } }, "Live — updates as you type")
+                  React.createElement("span", { style: { color: "var(--conf-high)" } }, "Live — changes auto-recalculate")
                 )
               : React.createElement(React.Fragment, null,
                   React.createElement(CircleDot, { size: 14, style: { color: "var(--text-dim)" } }),
@@ -711,7 +757,7 @@ export default function AUOSmartTicket() {
               { label: "Case 3: Urgent Large", sym: "HDFCBANK.NS", cl: "Client_GHI", q: "200000", n: "Urgent buy - critical allocation", t: 60 },
             ].map(p => React.createElement("button", {
               key: p.label,
-              onClick: () => { setSymbol(p.sym); setCpty(p.cl); setQty(p.q); setNotes(p.n); setTtc(p.t); setSymbolSearch(""); },
+              onClick: () => { setSymbol(p.sym); setCpty(p.cl); setQty(p.q); setNotes(p.n); setTtc(p.t); setSymbolSearch(""); setDriverOverrides({}); },
               style: {
                 padding: "6px 10px", background: "var(--surface-2)", border: "1px solid var(--border)",
                 borderRadius: "4px", color: "var(--text-sub)", fontSize: "11px", cursor: "pointer",
@@ -765,18 +811,18 @@ export default function AUOSmartTicket() {
           style: { background: "var(--surface-1)", borderRadius: "8px", border: "1px solid var(--border)", overflow: "hidden" }
         },
           React.createElement(SectionHeader, { icon: Target, title: "Core Execution", subtitle: "Tier 1 & 2", tag: ctx?.cas_active ? "CAS" : null }),
-          React.createElement(SmartField, { label: "Instrument", value: getValue(p.instrument), hasRun, confidence: p.instrument?.confidence, rationale: p.instrument?.rationale, icon: Box, disabled: true }),
-          React.createElement(SmartField, { label: "Side", value: getValue(p.side), options: ["Buy", "Sell"], hasRun, confidence: p.side?.confidence, rationale: p.side?.rationale, icon: p.side?.value === "Sell" ? ArrowDownRight : ArrowUpRight }),
-          React.createElement(SmartField, { label: "Quantity", value: getValue(p.quantity), hasRun, confidence: p.quantity?.confidence, rationale: p.quantity?.rationale, icon: BarChart3, type: "number" }),
-          React.createElement(SmartField, { label: "Order Type", value: getValue(p.order_type), options: ["Market", "Limit", "Stop", "Stop_Limit"], hasRun, confidence: p.order_type?.confidence, rationale: p.order_type?.rationale, icon: Layers }),
-          React.createElement(SmartField, { label: "Price Type", value: getValue(p.price_type), options: ["Market", "Limit", "Best", "Pegged"], hasRun, confidence: p.price_type?.confidence, rationale: p.price_type?.rationale, icon: TrendingUp }),
-          React.createElement(SmartField, { label: "Limit Price", value: getValue(p.limit_price), hasRun, confidence: p.limit_price?.confidence, rationale: p.limit_price?.rationale, icon: Target, type: "number" }),
-          React.createElement(SmartField, { label: "TIF", value: getValue(p.tif), options: ["GFD", "GTD", "IOC", "FOK", "CAS"], hasRun, confidence: p.tif?.confidence, rationale: p.tif?.rationale, icon: Clock }),
-          React.createElement(SmartField, { label: "Release Date", value: getValue(p.release_date), hasRun, confidence: p.release_date?.confidence, rationale: p.release_date?.rationale, icon: Clock, type: "date" }),
-          React.createElement(SmartField, { label: "Hold", value: getValue(p.hold), options: ["Yes", "No"], hasRun, confidence: p.hold?.confidence, rationale: p.hold?.rationale, icon: Shield }),
-          React.createElement(SmartField, { label: "Category", value: getValue(p.category), options: ["Client", "House", "Proprietary"], hasRun, confidence: p.category?.confidence, rationale: p.category?.rationale, icon: Shield }),
-          React.createElement(SmartField, { label: "Capacity", value: getValue(p.capacity), options: ["Principal", "Agent", "Riskless_Principal"], hasRun, confidence: p.capacity?.confidence, rationale: p.capacity?.rationale, icon: Shield }),
-          React.createElement(SmartField, { label: "Account", value: getValue(p.account), hasRun, confidence: p.account?.confidence, rationale: p.account?.rationale, icon: Shield }),
+          React.createElement(SmartField, { label: "Instrument", value: getValue(p.instrument), hasRun, confidence: p.instrument?.confidence, rationale: p.instrument?.rationale, icon: Box, disabled: true, recalcGeneration: recalcGen }),
+          React.createElement(SmartField, { label: "Side", value: getValue(p.side), options: ["Buy", "Sell"], hasRun, confidence: p.side?.confidence, rationale: p.side?.rationale, icon: p.side?.value === "Sell" ? ArrowDownRight : ArrowUpRight, onDriverChange: handleDriverChange, recalcGeneration: recalcGen }),
+          React.createElement(SmartField, { label: "Quantity", value: getValue(p.quantity), hasRun, confidence: p.quantity?.confidence, rationale: p.quantity?.rationale, icon: BarChart3, type: "number", recalcGeneration: recalcGen }),
+          React.createElement(SmartField, { label: "Order Type", value: getValue(p.order_type), options: ["Market", "Limit", "Stop", "Stop_Limit"], hasRun, confidence: p.order_type?.confidence, rationale: p.order_type?.rationale, icon: Layers, recalcGeneration: recalcGen }),
+          React.createElement(SmartField, { label: "Price Type", value: getValue(p.price_type), options: ["Market", "Limit", "Best", "Pegged"], hasRun, confidence: p.price_type?.confidence, rationale: p.price_type?.rationale, icon: TrendingUp, recalcGeneration: recalcGen }),
+          React.createElement(SmartField, { label: "Limit Price", value: getValue(p.limit_price), hasRun, confidence: p.limit_price?.confidence, rationale: p.limit_price?.rationale, icon: Target, type: "number", recalcGeneration: recalcGen }),
+          React.createElement(SmartField, { label: "TIF", value: getValue(p.tif), options: ["GFD", "GTD", "IOC", "FOK", "CAS"], hasRun, confidence: p.tif?.confidence, rationale: p.tif?.rationale, icon: Clock, recalcGeneration: recalcGen }),
+          React.createElement(SmartField, { label: "Release Date", value: getValue(p.release_date), hasRun, confidence: p.release_date?.confidence, rationale: p.release_date?.rationale, icon: Clock, type: "date", recalcGeneration: recalcGen }),
+          React.createElement(SmartField, { label: "Hold", value: getValue(p.hold), options: ["Yes", "No"], hasRun, confidence: p.hold?.confidence, rationale: p.hold?.rationale, icon: Shield, recalcGeneration: recalcGen }),
+          React.createElement(SmartField, { label: "Category", value: getValue(p.category), options: ["Client", "House", "Proprietary"], hasRun, confidence: p.category?.confidence, rationale: p.category?.rationale, icon: Shield, recalcGeneration: recalcGen }),
+          React.createElement(SmartField, { label: "Capacity", value: getValue(p.capacity), options: ["Principal", "Agent", "Riskless_Principal"], hasRun, confidence: p.capacity?.confidence, rationale: p.capacity?.rationale, icon: Shield, recalcGeneration: recalcGen }),
+          React.createElement(SmartField, { label: "Account", value: getValue(p.account), hasRun, confidence: p.account?.confidence, rationale: p.account?.rationale, icon: Shield, recalcGeneration: recalcGen }),
         ),
 
         // ─── BLOCK B: Algo Strategy ───
@@ -784,16 +830,16 @@ export default function AUOSmartTicket() {
           style: { background: "var(--surface-1)", borderRadius: "8px", border: "1px solid var(--border)", overflow: "hidden" }
         },
           React.createElement(SectionHeader, { icon: Cpu, title: "Algo Strategy Engine", subtitle: "Tier 3" }),
-          React.createElement(SmartField, { label: "Service", value: getValue(p.service), options: ["BlueBox 2", "Market", "DMA"], hasRun, confidence: p.service?.confidence, rationale: p.service?.rationale, icon: Cpu }),
-          React.createElement(SmartField, { label: "Executor", value: getValue(p.executor), options: ["VWAP", "TWAP", "POV", "ICEBERG"], hasRun, confidence: p.executor?.confidence, rationale: p.executor?.rationale, icon: Activity }),
-          React.createElement(SmartField, { label: "Pricing", value: getValue(p.pricing), options: ["Adaptive", "Passive", "Aggressive"], hasRun, confidence: p.pricing?.confidence, rationale: p.pricing?.rationale, icon: TrendingUp }),
-          React.createElement(SmartField, { label: "Layering", value: getValue(p.layering), options: ["Auto", "Manual", "Percentage"], hasRun, confidence: p.layering?.confidence, rationale: p.layering?.rationale, icon: Layers }),
-          React.createElement(SmartField, { label: "Urgency", value: getValue(p.urgency_setting), options: ["Low", "Medium", "High", "Auto"], hasRun, confidence: p.urgency_setting?.confidence, rationale: p.urgency_setting?.rationale, icon: Gauge }),
-          React.createElement(SmartField, { label: "Get Done?", value: getValue(p.get_done), options: ["True", "False"], hasRun, confidence: p.get_done?.confidence, rationale: p.get_done?.rationale, icon: Check }),
-          React.createElement(SmartField, { label: "Open Print?", value: getValue(p.opening_print), options: ["True", "False"], hasRun, confidence: p.opening_print?.confidence, rationale: p.opening_print?.rationale, icon: Eye }),
-          React.createElement(SmartField, { label: "Open %", value: getValue(p.opening_pct), hasRun, confidence: p.opening_pct?.confidence, rationale: p.opening_pct?.rationale, icon: Eye, type: "number" }),
-          React.createElement(SmartField, { label: "Close Print?", value: getValue(p.closing_print), options: ["True", "False"], hasRun, confidence: p.closing_print?.confidence, rationale: p.closing_print?.rationale, icon: EyeOff }),
-          React.createElement(SmartField, { label: "Close %", value: getValue(p.closing_pct), hasRun, confidence: p.closing_pct?.confidence, rationale: p.closing_pct?.rationale, icon: EyeOff, type: "number" }),
+          React.createElement(SmartField, { label: "Service", value: getValue(p.service), options: ["BlueBox 2", "Market", "DMA"], hasRun, confidence: p.service?.confidence, rationale: p.service?.rationale, icon: Cpu, recalcGeneration: recalcGen }),
+          React.createElement(SmartField, { label: "Executor", value: getValue(p.executor), options: ["VWAP", "TWAP", "POV", "ICEBERG"], hasRun, confidence: p.executor?.confidence, rationale: p.executor?.rationale, icon: Activity, recalcGeneration: recalcGen }),
+          React.createElement(SmartField, { label: "Pricing", value: getValue(p.pricing), options: ["Adaptive", "Passive", "Aggressive"], hasRun, confidence: p.pricing?.confidence, rationale: p.pricing?.rationale, icon: TrendingUp, recalcGeneration: recalcGen }),
+          React.createElement(SmartField, { label: "Layering", value: getValue(p.layering), options: ["Auto", "Manual", "Percentage"], hasRun, confidence: p.layering?.confidence, rationale: p.layering?.rationale, icon: Layers, recalcGeneration: recalcGen }),
+          React.createElement(SmartField, { label: "Urgency", value: getValue(p.urgency_setting), options: ["Low", "Medium", "High", "Auto"], hasRun, confidence: p.urgency_setting?.confidence, rationale: p.urgency_setting?.rationale, icon: Gauge, recalcGeneration: recalcGen }),
+          React.createElement(SmartField, { label: "Get Done?", value: getValue(p.get_done), options: ["True", "False"], hasRun, confidence: p.get_done?.confidence, rationale: p.get_done?.rationale, icon: Check, recalcGeneration: recalcGen }),
+          React.createElement(SmartField, { label: "Open Print?", value: getValue(p.opening_print), options: ["True", "False"], hasRun, confidence: p.opening_print?.confidence, rationale: p.opening_print?.rationale, icon: Eye, recalcGeneration: recalcGen }),
+          React.createElement(SmartField, { label: "Open %", value: getValue(p.opening_pct), hasRun, confidence: p.opening_pct?.confidence, rationale: p.opening_pct?.rationale, icon: Eye, type: "number", recalcGeneration: recalcGen }),
+          React.createElement(SmartField, { label: "Close Print?", value: getValue(p.closing_print), options: ["True", "False"], hasRun, confidence: p.closing_print?.confidence, rationale: p.closing_print?.rationale, icon: EyeOff, recalcGeneration: recalcGen }),
+          React.createElement(SmartField, { label: "Close %", value: getValue(p.closing_pct), hasRun, confidence: p.closing_pct?.confidence, rationale: p.closing_pct?.rationale, icon: EyeOff, type: "number", recalcGeneration: recalcGen }),
         ),
 
         // ─── BLOCK C: Crossing & Dark Pool ───
@@ -801,10 +847,10 @@ export default function AUOSmartTicket() {
           style: { background: "var(--surface-1)", borderRadius: "8px", border: "1px solid var(--border)", overflow: "hidden" }
         },
           React.createElement(SectionHeader, { icon: Crosshair, title: "Crossing & Dark Pool" }),
-          React.createElement(SmartField, { label: "Min Cross", value: getValue(p.min_cross_qty), hasRun, confidence: p.min_cross_qty?.confidence, rationale: p.min_cross_qty?.rationale, icon: Crosshair, type: "number" }),
-          React.createElement(SmartField, { label: "Max Cross", value: getValue(p.max_cross_qty), hasRun, confidence: p.max_cross_qty?.confidence, rationale: p.max_cross_qty?.rationale, icon: Crosshair, type: "number" }),
-          React.createElement(SmartField, { label: "Cross Unit", value: getValue(p.cross_qty_unit), options: ["Shares", "Value", "Percentage"], hasRun, confidence: p.cross_qty_unit?.confidence, rationale: p.cross_qty_unit?.rationale, icon: Crosshair }),
-          React.createElement(SmartField, { label: "Leave Active", value: getValue(p.leave_active_slice), options: ["True", "False"], hasRun, confidence: p.leave_active_slice?.confidence, rationale: p.leave_active_slice?.rationale, icon: Crosshair }),
+          React.createElement(SmartField, { label: "Min Cross", value: getValue(p.min_cross_qty), hasRun, confidence: p.min_cross_qty?.confidence, rationale: p.min_cross_qty?.rationale, icon: Crosshair, type: "number", recalcGeneration: recalcGen }),
+          React.createElement(SmartField, { label: "Max Cross", value: getValue(p.max_cross_qty), hasRun, confidence: p.max_cross_qty?.confidence, rationale: p.max_cross_qty?.rationale, icon: Crosshair, type: "number", recalcGeneration: recalcGen }),
+          React.createElement(SmartField, { label: "Cross Unit", value: getValue(p.cross_qty_unit), options: ["Shares", "Value", "Percentage"], hasRun, confidence: p.cross_qty_unit?.confidence, rationale: p.cross_qty_unit?.rationale, icon: Crosshair, recalcGeneration: recalcGen }),
+          React.createElement(SmartField, { label: "Leave Active", value: getValue(p.leave_active_slice), options: ["True", "False"], hasRun, confidence: p.leave_active_slice?.confidence, rationale: p.leave_active_slice?.rationale, icon: Crosshair, recalcGeneration: recalcGen }),
         ),
 
         // ─── BLOCK D: IWould ───
@@ -815,8 +861,8 @@ export default function AUOSmartTicket() {
           hasRun && result?.urgency_score > 70 && React.createElement("div", {
             style: { padding: "6px 12px", fontSize: "11px", color: "#ff8c42", background: "rgba(255,140,66,0.08)", display: "flex", alignItems: "center", gap: "6px" }
           }, React.createElement(AlertTriangle, { size: 12 }), "High urgency — IWould typically not applicable"),
-          React.createElement(SmartField, { label: "IWould Price", value: getValue(p.iwould_price), hasRun, confidence: p.iwould_price?.confidence, rationale: p.iwould_price?.rationale, icon: Target, type: "number" }),
-          React.createElement(SmartField, { label: "IWould Qty", value: getValue(p.iwould_qty), hasRun, confidence: p.iwould_qty?.confidence, rationale: p.iwould_qty?.rationale, icon: BarChart3, type: "number" }),
+          React.createElement(SmartField, { label: "IWould Price", value: getValue(p.iwould_price), hasRun, confidence: p.iwould_price?.confidence, rationale: p.iwould_price?.rationale, icon: Target, type: "number", recalcGeneration: recalcGen }),
+          React.createElement(SmartField, { label: "IWould Qty", value: getValue(p.iwould_qty), hasRun, confidence: p.iwould_qty?.confidence, rationale: p.iwould_qty?.rationale, icon: BarChart3, type: "number", recalcGeneration: recalcGen }),
         ),
 
         // ─── BLOCK E: Dynamic Limits ───
@@ -824,9 +870,9 @@ export default function AUOSmartTicket() {
           style: { background: "var(--surface-1)", borderRadius: "8px", border: "1px solid var(--border)", overflow: "hidden" }
         },
           React.createElement(SectionHeader, { icon: SlidersHorizontal, title: "Dynamic Limits" }),
-          React.createElement(SmartField, { label: "Limit Option", value: getValue(p.limit_option), options: ["Order Limit", "Primary Best Bid", "Primary Best Ask", "VWAP", "Midpoint"], hasRun, confidence: p.limit_option?.confidence, rationale: p.limit_option?.rationale, icon: SlidersHorizontal }),
-          React.createElement(SmartField, { label: "Limit Offset", value: getValue(p.limit_offset), hasRun, confidence: p.limit_offset?.confidence, rationale: p.limit_offset?.rationale, icon: SlidersHorizontal, type: "number" }),
-          React.createElement(SmartField, { label: "Offset Unit", value: getValue(p.offset_unit), options: ["Tick", "BPS", "Percentage"], hasRun, confidence: p.offset_unit?.confidence, rationale: p.offset_unit?.rationale, icon: SlidersHorizontal }),
+          React.createElement(SmartField, { label: "Limit Option", value: getValue(p.limit_option), options: ["Order Limit", "Primary Best Bid", "Primary Best Ask", "VWAP", "Midpoint"], hasRun, confidence: p.limit_option?.confidence, rationale: p.limit_option?.rationale, icon: SlidersHorizontal, recalcGeneration: recalcGen }),
+          React.createElement(SmartField, { label: "Limit Offset", value: getValue(p.limit_offset), hasRun, confidence: p.limit_offset?.confidence, rationale: p.limit_offset?.rationale, icon: SlidersHorizontal, type: "number", recalcGeneration: recalcGen }),
+          React.createElement(SmartField, { label: "Offset Unit", value: getValue(p.offset_unit), options: ["Tick", "BPS", "Percentage"], hasRun, confidence: p.offset_unit?.confidence, rationale: p.offset_unit?.rationale, icon: SlidersHorizontal, recalcGeneration: recalcGen }),
         ),
 
         // ─── ACTION BAR ───
