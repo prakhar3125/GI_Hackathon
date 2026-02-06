@@ -7,6 +7,12 @@ import {
   Timer, Crosshair, SlidersHorizontal, Cpu
 } from "lucide-react";
 
+// ─── API CONFIG ─────────────────────────────────────────────────
+// Toggle between mock (null) and real backend:
+//   null           → uses built-in mockPrefill (no server needed)
+//   "http://localhost:8000" → uses FastAPI backend
+const API_BASE = "http://localhost:8000";
+
 // ─── MOCK BACKEND ───────────────────────────────────────────────
 const MOCK_CLIENTS = [
   { cpty_id: "Client_XYZ", client_name: "XYZ Capital", urgency_factor: 0.85 },
@@ -52,16 +58,11 @@ function mockPrefill(input) {
   const classification = urgencyScore >= 80 ? "CRITICAL" : urgencyScore >= 60 ? "HIGH" : urgencyScore >= 40 ? "MEDIUM" : "LOW";
 
   // Side detection
-  let side = input.side || null;
-  let sideConf = "LOW", sideRat = "Require manual selection";
-  if (!side) {
-    if (notes.includes("buy") || notes.includes("purchase") || notes.includes("long")) {
-      side = "Buy"; sideConf = "HIGH"; sideRat = "Order notes indicate buy instruction";
-    } else if (notes.includes("sell") || notes.includes("liquidate") || notes.includes("short")) {
-      side = "Sell"; sideConf = "HIGH"; sideRat = "Order notes indicate sell instruction";
-    }
-  } else {
-    sideConf = "HIGH"; sideRat = "User-specified side";
+  let side = null, sideConf = "LOW", sideRat = "Require manual selection";
+  if (notes.includes("buy") || notes.includes("purchase") || notes.includes("long")) {
+    side = "Buy"; sideConf = "HIGH"; sideRat = "Order notes indicate buy instruction";
+  } else if (notes.includes("sell") || notes.includes("liquidate") || notes.includes("short")) {
+    side = "Sell"; sideConf = "HIGH"; sideRat = "Order notes indicate sell instruction";
   }
 
   // CAS detection
@@ -80,7 +81,7 @@ function mockPrefill(input) {
     orderType = "Limit"; orderTypeRat = "Standard limit order for price protection";
   }
 
-  // Limit price (recalculated based on current parameters)
+  // Limit price
   let limitPrice, limitRat;
   if (casActive) {
     const mult = urgencyScore > 80 ? (side === "Sell" ? 0.992 : 1.008) : (side === "Sell" ? 0.995 : 1.005);
@@ -166,6 +167,7 @@ function mockPrefill(input) {
         service: { value: useAlgo ? "BlueBox 2" : "Market", confidence: "HIGH", rationale: useAlgo ? "Algo engine" : "Direct market execution" },
         executor: { value: executor, confidence: useAlgo ? "HIGH" : "HIGH", rationale: executorRat },
         use_algo: useAlgo,
+        // VWAP
         pricing: { value: pricing, confidence: "HIGH", rationale: pricingRat },
         layering: { value: "Auto", confidence: "HIGH", rationale: "Auto-layering optimizes order book placement dynamically" },
         urgency_setting: { value: urgSetting, confidence: "HIGH", rationale: `Urgency score: ${urgencyScore}/100 → ${urgSetting}` },
@@ -174,12 +176,15 @@ function mockPrefill(input) {
         opening_pct: { value: openPrint ? 10 : 0, confidence: "MEDIUM", rationale: "Max % in opening auction" },
         closing_print: { value: closePrint ? "True" : "False", confidence: "HIGH", rationale: closePrint ? "Approaching close - participate in closing auction" : "Sufficient time remaining" },
         closing_pct: { value: closePct, confidence: "MEDIUM", rationale: `Max ${closePct}% in closing auction` },
+        // Crossing
         min_cross_qty: { value: minCross, confidence: "MEDIUM", rationale: crossEnabled ? "Large order: Enable crossing for 20% blocks" : "Not applicable" },
         max_cross_qty: { value: maxCross, confidence: "MEDIUM", rationale: crossEnabled ? "Large order: Enable crossing for 50% blocks" : "Not applicable" },
         cross_qty_unit: { value: "Shares", confidence: "HIGH", rationale: "Standard unit" },
         leave_active_slice: { value: "False", confidence: "HIGH", rationale: "Avoid over-execution during cross" },
+        // IWould
         iwould_price: { value: iwPrice, confidence: "MEDIUM", rationale: iwEnabled ? "Opportunistic execution price" : "Not applicable for urgent orders" },
         iwould_qty: { value: iwQty, confidence: "MEDIUM", rationale: iwEnabled ? "30% of total order" : "Not applicable" },
+        // Limit Adjustment
         limit_option: { value: limOption, confidence: urgencyScore >= 80 ? "MEDIUM" : "HIGH", rationale: urgencyScore >= 80 ? "Peg to best price for aggressive fill" : "Static limit price from order" },
         limit_offset: { value: limOffset, confidence: "HIGH", rationale: limOffset ? `${limOffset} tick offset` : "No offset" },
         offset_unit: { value: "Tick", confidence: "HIGH", rationale: "Standard tick-based offset" },
@@ -206,7 +211,7 @@ function mockPrefill(input) {
 }
 
 // ─── SMART FIELD COMPONENT ──────────────────────────────────────
-function SmartField({ label, value, options, hasRun, confidence, rationale, icon, type, disabled: forceDisabled, onValueChange }) {
+function SmartField({ label, value, options, hasRun, confidence, rationale, icon, type, disabled: forceDisabled }) {
   const [isEdited, setIsEdited] = useState(false);
   const [currentValue, setCurrentValue] = useState(value);
   const [showTip, setShowTip] = useState(false);
@@ -225,12 +230,7 @@ function SmartField({ label, value, options, hasRun, confidence, rationale, icon
 
   const handleChange = (e) => {
     setIsEdited(true);
-    const newValue = e.target.value;
-    setCurrentValue(newValue);
-    // Notify parent component of the change
-    if (onValueChange) {
-      onValueChange(label, newValue);
-    }
+    setCurrentValue(e.target.value);
   };
 
   const confColor = confidence === "HIGH" ? "var(--conf-high)" : confidence === "MEDIUM" ? "var(--conf-med)" : "var(--conf-low)";
@@ -461,65 +461,56 @@ export default function AUOSmartTicket() {
   const [hasRun, setHasRun] = useState(false);
   const [symbolSearch, setSymbolSearch] = useState("");
   const [showSymbols, setShowSymbols] = useState(false);
-  
-  // Track edited values for dynamic recalculation
-  const [editedValues, setEditedValues] = useState({});
 
   const filteredSymbols = MOCK_SYMBOLS.filter(s => s.toLowerCase().includes(symbolSearch.toLowerCase()));
   const debounceRef = useRef(null);
 
+  // Auto-trigger prefill whenever all required fields are filled
   const allFilled = !!(symbol && cpty && qty);
 
-  // Function to handle value changes from SmartField components
-  const handleFieldEdit = (fieldLabel, newValue) => {
-    setEditedValues(prev => ({
-      ...prev,
-      [fieldLabel]: newValue
-    }));
-  };
-
-  // Auto-trigger prefill whenever inputs change
   useEffect(() => {
     if (!allFilled) {
       setResult(null);
       setHasRun(false);
       setLoading(false);
-      setEditedValues({});
       return;
     }
 
+    // Debounce to avoid hammering on rapid typing (300ms)
     setLoading(true);
     if (debounceRef.current) clearTimeout(debounceRef.current);
     debounceRef.current = setTimeout(async () => {
-      // Merge edited values into the input
-      const inputData = {
-        symbol,
-        cpty_id: cpty,
-        size: +qty,
-        order_notes: notes,
-        time_to_close: ttc,
-        // Include any edited side value
-        side: editedValues['Side'] || null
-      };
-      
-      const res = await mockPrefill(inputData);
-      setResult(res);
-      setHasRun(true);
+      try {
+        const inputData = { symbol, cpty_id: cpty, size: +qty, order_notes: notes, time_to_close: ttc };
+
+        let res;
+        if (API_BASE) {
+          // ─── REAL BACKEND (FastAPI) ───
+          const resp = await fetch(`${API_BASE}/api/prefill`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(inputData),
+          });
+          if (!resp.ok) throw new Error(`API error ${resp.status}`);
+          res = await resp.json();
+        } else {
+          // ─── MOCK (built-in, no server needed) ───
+          res = await mockPrefill(inputData);
+        }
+
+        setResult(res);
+        setHasRun(true);
+      } catch (err) {
+        console.error("AUO prefill error:", err);
+      }
       setLoading(false);
     }, 300);
 
     return () => { if (debounceRef.current) clearTimeout(debounceRef.current); };
-  }, [symbol, cpty, qty, notes, ttc, allFilled, editedValues]);
+  }, [symbol, cpty, qty, notes, ttc, allFilled]);
 
   const resetAll = () => {
-    setResult(null);
-    setHasRun(false);
-    setSymbol("");
-    setCpty("");
-    setQty("");
-    setNotes("");
-    setTtc(25);
-    setEditedValues({});
+    setResult(null); setHasRun(false); setSymbol(""); setCpty(""); setQty(""); setNotes(""); setTtc(25);
   };
 
   const p = result?.prefilled_params || {};
@@ -577,7 +568,7 @@ export default function AUOSmartTicket() {
         }, `v${result.metadata.auo_version} · ${result.metadata.processing_time_ms}ms · conf ${result.metadata.confidence_score}`),
         React.createElement("span", {
           style: { fontSize: "10px", padding: "3px 8px", background: "var(--surface-2)", borderRadius: "4px", color: "var(--text-dim)", fontFamily: "var(--font-mono)" }
-        }, "LIVE RECALC MODE")
+        }, API_BASE ? "⚡ API MODE" : "🧪 MOCK MODE")
       )
     ),
 
@@ -671,7 +662,7 @@ export default function AUOSmartTicket() {
           style: { padding: "10px 12px", background: "var(--surface-2)", borderRadius: "8px" }
         }, React.createElement(TimeSlider, { value: ttc, onChange: setTtc })),
 
-        // Live Status Indicator
+        // Live Status Indicator (replaces Run button)
         React.createElement("div", {
           style: {
             width: "100%", padding: "10px 12px", borderRadius: "8px",
@@ -720,7 +711,7 @@ export default function AUOSmartTicket() {
               { label: "Case 3: Urgent Large", sym: "HDFCBANK.NS", cl: "Client_GHI", q: "200000", n: "Urgent buy - critical allocation", t: 60 },
             ].map(p => React.createElement("button", {
               key: p.label,
-              onClick: () => { setSymbol(p.sym); setCpty(p.cl); setQty(p.q); setNotes(p.n); setTtc(p.t); setSymbolSearch(""); setEditedValues({}); },
+              onClick: () => { setSymbol(p.sym); setCpty(p.cl); setQty(p.q); setNotes(p.n); setTtc(p.t); setSymbolSearch(""); },
               style: {
                 padding: "6px 10px", background: "var(--surface-2)", border: "1px solid var(--border)",
                 borderRadius: "4px", color: "var(--text-sub)", fontSize: "11px", cursor: "pointer",
@@ -775,16 +766,7 @@ export default function AUOSmartTicket() {
         },
           React.createElement(SectionHeader, { icon: Target, title: "Core Execution", subtitle: "Tier 1 & 2", tag: ctx?.cas_active ? "CAS" : null }),
           React.createElement(SmartField, { label: "Instrument", value: getValue(p.instrument), hasRun, confidence: p.instrument?.confidence, rationale: p.instrument?.rationale, icon: Box, disabled: true }),
-          React.createElement(SmartField, { 
-            label: "Side", 
-            value: getValue(p.side), 
-            options: ["Buy", "Sell"], 
-            hasRun, 
-            confidence: p.side?.confidence, 
-            rationale: p.side?.rationale, 
-            icon: p.side?.value === "Sell" ? ArrowDownRight : ArrowUpRight,
-            onValueChange: handleFieldEdit
-          }),
+          React.createElement(SmartField, { label: "Side", value: getValue(p.side), options: ["Buy", "Sell"], hasRun, confidence: p.side?.confidence, rationale: p.side?.rationale, icon: p.side?.value === "Sell" ? ArrowDownRight : ArrowUpRight }),
           React.createElement(SmartField, { label: "Quantity", value: getValue(p.quantity), hasRun, confidence: p.quantity?.confidence, rationale: p.quantity?.rationale, icon: BarChart3, type: "number" }),
           React.createElement(SmartField, { label: "Order Type", value: getValue(p.order_type), options: ["Market", "Limit", "Stop", "Stop_Limit"], hasRun, confidence: p.order_type?.confidence, rationale: p.order_type?.rationale, icon: Layers }),
           React.createElement(SmartField, { label: "Price Type", value: getValue(p.price_type), options: ["Market", "Limit", "Best", "Pegged"], hasRun, confidence: p.price_type?.confidence, rationale: p.price_type?.rationale, icon: TrendingUp }),
