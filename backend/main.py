@@ -767,7 +767,114 @@ def update_ttc(symbol: str, ttc: int):
     finally:
         conn.close()
 
+# ============================================================
+# NEW: BLOTTER ENDPOINTS
+# ============================================================
 
+@app.get("/api/orders")
+def list_orders(
+    symbol: Optional[str] = None,
+    cpty_id: Optional[str] = None,
+    side: Optional[str] = None,
+    status: Optional[str] = None,
+    date_from: Optional[str] = None,
+    date_to: Optional[str] = None,
+    limit: int = 200
+):
+    conn = get_db()
+    try:
+        with conn.cursor() as cur:
+            # Build query dynamically
+            sql = "SELECT * FROM order_data WHERE 1=1"
+            params = []
+            
+            if symbol:
+                sql += " AND symbol LIKE %s"
+                params.append(f"%{symbol}%")
+            if cpty_id:
+                sql += " AND cpty_id = %s"
+                params.append(cpty_id)
+            if side:
+                sql += " AND side = %s"
+                params.append(side)
+            if status:
+                sql += " AND submission_status = %s"
+                params.append(status)
+            if date_from:
+                sql += " AND DATE(arrival_time) >= %s"
+                params.append(date_from)
+            if date_to:
+                sql += " AND DATE(arrival_time) <= %s"
+                params.append(date_to)
+                
+            sql += " ORDER BY order_id DESC LIMIT %s"
+            params.append(limit)
+            
+            cur.execute(sql, tuple(params))
+            rows = cur.fetchall()
+            
+            # Format JSON fields and Dates
+            for r in rows:
+                if isinstance(r.get("prefill_result"), str):
+                    r["prefill_result"] = json.loads(r["prefill_result"])
+                if isinstance(r.get("submitted_params"), str):
+                    r["submitted_params"] = json.loads(r["submitted_params"])
+                # Extract specific fields for the table
+                submitted = r.get("submitted_params") or {}
+                r["urgency_score"] = submitted.get("urgency_score")
+                r["urgency_class"] = submitted.get("urgency_classification")
+                # Handle datetime serialization
+                for k, v in r.items():
+                    if isinstance(v, (datetime, date)):
+                        r[k] = v.isoformat()
+
+            return {"orders": rows, "total": len(rows)}
+    finally:
+        conn.close()
+
+@app.get("/api/orders/stats")
+def get_order_stats():
+    conn = get_db()
+    try:
+        with conn.cursor() as cur:
+            stats = {}
+            
+            # 1. Total Orders
+            cur.execute("SELECT COUNT(*) as c FROM order_data")
+            stats["total_orders"] = cur.fetchone()["c"]
+            
+            # 2. Submitted
+            cur.execute("SELECT COUNT(*) as c FROM order_data WHERE submission_status='Submitted'")
+            stats["submitted"] = cur.fetchone()["c"]
+            
+            # 3. Cancelled (assuming you might have this status later)
+            cur.execute("SELECT COUNT(*) as c FROM order_data WHERE submission_status='Cancelled'")
+            stats["cancelled"] = cur.fetchone()["c"]
+
+            # 4. Drafts (Not stored in DB usually, but for completeness)
+            stats["drafts"] = 0 
+            
+            # 5. Buy/Sell Counts
+            cur.execute("SELECT side, COUNT(*) as c FROM order_data GROUP BY side")
+            rows = cur.fetchall()
+            stats["buy_count"] = next((r["c"] for r in rows if r["side"] == "Buy"), 0)
+            stats["sell_count"] = next((r["c"] for r in rows if r["side"] == "Sell"), 0)
+            
+            # 6. Total Volume
+            cur.execute("SELECT SUM(size) as v FROM order_data")
+            stats["total_volume"] = cur.fetchone()["v"] or 0
+            
+            # 7. Unique Symbols
+            cur.execute("SELECT COUNT(DISTINCT symbol) as c FROM order_data")
+            stats["unique_symbols"] = cur.fetchone()["c"]
+            
+            # 8. Unique Clients
+            cur.execute("SELECT COUNT(DISTINCT cpty_id) as c FROM order_data")
+            stats["unique_clients"] = cur.fetchone()["c"]
+            
+            return stats
+    finally:
+        conn.close()
 # ============================================================
 # ENTRYPOINT
 # ============================================================
